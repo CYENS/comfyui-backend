@@ -19,3 +19,7 @@ schema-docs/*.pdf
 .pytest_cache/
 .mypy_cache/
 .DS_Store
+
+# IDE/debug artifacts
+.idea/
+error.txt
