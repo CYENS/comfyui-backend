@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual envs
+.venv/
+venv/
+
+# Local env
+.env
+
+# Local DB and generated artifacts
+backend.db
+*.db
+schema-docs/*.svg
+schema-docs/*.pdf
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.DS_Store

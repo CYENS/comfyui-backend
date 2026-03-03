@@ -1,0 +1,15 @@
+services:
+  eralchemy-pdf:
+    image: python:3.12-slim
+    container_name: backend-eralchemy-pdf
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        apt-get update &&
+        apt-get install -y --no-install-recommends graphviz libgraphviz-dev &&
+        pip install --no-cache-dir 'eralchemy[graphviz]' &&
+        eralchemy -i sqlite:////data/backend.db -o /output/erd.pdf
+    volumes:
+      - ./backend.db:/data/backend.db:ro
+      - ./schema-docs:/output

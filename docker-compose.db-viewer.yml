@@ -1,0 +1,79 @@
+services:
+  sqlite-web:
+    image: coleifer/sqlite-web:latest
+    container_name: backend-sqlite-web
+    command: ["sqlite_web", "/data/backend.db", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./backend.db:/data/backend.db:ro
+
+  erd-generator:
+    image: python:3.12-slim
+    container_name: backend-erd-generator
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        apt-get update &&
+        apt-get install -y --no-install-recommends graphviz &&
+        python - <<'PY'
+        import sqlite3
+        from pathlib import Path
+
+        db = "/data/backend.db"
+        out_dot = Path("/output/erd.dot")
+
+        conn = sqlite3.connect(db)
+        conn.row_factory = sqlite3.Row
+
+        tables = [
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).fetchall()
+        ]
+
+        lines = []
+        lines.append("digraph ERD {")
+        lines.append("  rankdir=LR;")
+        lines.append("  node [shape=record, fontsize=10];")
+
+        for t in tables:
+            cols = conn.execute(f"PRAGMA table_info('{t}')").fetchall()
+            parts = []
+            for c in cols:
+                col = c["name"]
+                typ = c["type"] or "TEXT"
+                pk = " PK" if c["pk"] else ""
+                parts.append(f"{col} : {typ}{pk}")
+            label = "{%s|%s}" % (t, "\\l".join(parts) + "\\l")
+            lines.append(f'  "{t}" [label="{label}"];')
+
+        for t in tables:
+            fks = conn.execute(f"PRAGMA foreign_key_list('{t}')").fetchall()
+            for fk in fks:
+                src = t
+                dst = fk["table"]
+                from_col = fk["from"]
+                to_col = fk["to"]
+                lines.append(f'  "{src}" -> "{dst}" [label="{from_col} -> {to_col}"];')
+
+        lines.append("}")
+        out_dot.write_text("\\n".join(lines), encoding="utf-8")
+        PY
+        dot -Tsvg /output/erd.dot -o /output/erd.svg &&
+        printf '%s\n' '<!doctype html><html><head><meta charset="utf-8"><title>Backend ERD</title><style>body{font-family:Arial,sans-serif;margin:16px}img{max-width:100%;height:auto;border:1px solid #ccc}</style></head><body><h1>Backend ER Diagram</h1><p>Generated from backend.db</p><img src="erd.svg" alt="ER diagram" /></body></html>' > /output/index.html
+    volumes:
+      - ./backend.db:/data/backend.db:ro
+      - ./schema-docs:/output
+    profiles:
+      - generate
+
+  schema-viewer:
+    image: nginx:alpine
+    container_name: backend-schema-viewer
+    ports:
+      - "8088:80"
+    volumes:
+      - ./schema-docs:/usr/share/nginx/html:ro

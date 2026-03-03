@@ -1,0 +1,21 @@
+[project]
+name = "comfyui-wrapper-backend"
+version = "0.1.0"
+description = "ComfyUI wrapper backend (MVP)"
+requires-python = ">=3.14"
+dependencies = [
+  "fastapi==0.135.1",
+  "flask==3.1.0",
+  "uvicorn==0.41.0",
+  "sqlalchemy==2.0.47",
+  "pydantic==2.12.5",
+  "pydantic-settings==2.13.1",
+  "httpx==0.28.1",
+  "python-multipart==0.0.22",
+  "passlib==1.7.4",
+]
+
+[dependency-groups]
+dev = [
+  "black",
+]
