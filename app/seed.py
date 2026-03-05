@@ -3,7 +3,13 @@ import os
 from pathlib import Path
 
 from .db import Base, SessionLocal, engine
-from .seeding import seed_admin_user, seed_roles_and_system_user, seed_workflows
+from .models import RoleName
+from .seeding import (
+    seed_admin_user,
+    seed_roles_and_system_user,
+    seed_user_with_roles,
+    seed_workflows,
+)
 
 
 DEFAULT_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
@@ -45,6 +51,37 @@ def main() -> None:
         seed_roles_and_system_user(db)
         seed_workflows(db)
         user = seed_admin_user(db, username=username, password=password)
+
+        def seed_optional(env_user: str, env_pass: str, roles: list[RoleName]) -> None:
+            u = os.environ.get(env_user)
+            p = os.environ.get(env_pass)
+            if not u and not p:
+                return
+            if not u or not p:
+                raise SystemExit(f"Both {env_user} and {env_pass} must be set together.")
+            created = seed_user_with_roles(db, username=u, password=p, roles=roles)
+            print(f"Seeded user username={created.username} roles={[r.value for r in roles]}")
+
+        seed_optional(
+            "WORKFLOW_CREATOR_USER_NAME",
+            "WORKFLOW_CREATOR_USER_PASSWORD",
+            [RoleName.WORKFLOW_CREATOR],
+        )
+        seed_optional(
+            "JOB_CREATOR_USER_NAME",
+            "JOB_CREATOR_USER_PASSWORD",
+            [RoleName.JOB_CREATOR],
+        )
+        seed_optional(
+            "VIEWER_USER_NAME",
+            "VIEWER_USER_PASSWORD",
+            [RoleName.VIEWER],
+        )
+        seed_optional(
+            "MODERATOR_USER_NAME",
+            "MODERATOR_USER_PASSWORD",
+            [RoleName.MODERATOR],
+        )
     finally:
         db.close()
 

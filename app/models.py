@@ -84,6 +84,9 @@ class User(Base):
 
     roles = relationship("Role", secondary="user_roles", back_populates="users")
     jobs = relationship("Job", back_populates="user")
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
     workflows_created = relationship(
         "Workflow",
         back_populates="created_by",
@@ -303,3 +306,17 @@ class AssetExport(Base):
     exported_at = Column(DateTime, nullable=True)
 
     asset = relationship("Asset", back_populates="export")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="refresh_tokens")

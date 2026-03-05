@@ -49,9 +49,16 @@ def seed_roles_and_system_user(db: Session) -> None:
 
 
 def seed_admin_user(db: Session, username: str, password: str) -> User:
-    role_map = ensure_roles(db)
-    admin_role_id = role_map[RoleName.ADMIN]
+    return seed_user_with_roles(db, username, password, [RoleName.ADMIN])
 
+
+def seed_user_with_roles(
+    db: Session,
+    username: str,
+    password: str,
+    roles: list[RoleName],
+) -> User:
+    role_map = ensure_roles(db)
     user = db.query(User).filter(User.username == username).one_or_none()
     if user is None:
         user = User(
@@ -65,13 +72,15 @@ def seed_admin_user(db: Session, username: str, password: str) -> User:
         user.password_hash = hash_password(password)
         db.add(user)
 
-    link = (
-        db.query(UserRole)
-        .filter(UserRole.user_id == user.id, UserRole.role_id == admin_role_id)
-        .one_or_none()
-    )
-    if link is None:
-        db.add(UserRole(user_id=user.id, role_id=admin_role_id))
+    for role in roles:
+        role_id = role_map[role]
+        link = (
+            db.query(UserRole)
+            .filter(UserRole.user_id == user.id, UserRole.role_id == role_id)
+            .one_or_none()
+        )
+        if link is None:
+            db.add(UserRole(user_id=user.id, role_id=role_id))
 
     db.commit()
     db.refresh(user)

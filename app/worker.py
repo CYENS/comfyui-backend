@@ -1,9 +1,12 @@
 import asyncio
 import hashlib
 import json
+import logging
 import mimetypes
+import sys
 import uuid
 from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -12,6 +15,42 @@ from .config import settings
 from .db import SessionLocal
 from .models import Asset, AssetType, AssetValidationCurrent, Job, JobStatus, ValidationStatus
 from .services.comfy_client import ComfyClient
+
+logger = logging.getLogger("backend.worker")
+
+
+def configure_logging() -> None:
+    level = getattr(logging, settings.worker_log_level.upper(), logging.INFO)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setLevel(level)
+    stdout_handler.setFormatter(formatter)
+    root.addHandler(stdout_handler)
+
+    log_path = Path(settings.worker_log_file)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = RotatingFileHandler(
+            filename=log_path,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
+    except Exception:
+        logger.exception("Failed to initialize file logging at %s", log_path)
+
+    logger.info("Worker logging initialized (level=%s, file=%s)", settings.worker_log_level, log_path)
 
 
 def set_path(obj: dict, path: str, value):
@@ -156,6 +195,7 @@ async def _ingest_job_outputs(
 
 
 async def process_job(db: Session, job: Job, client: ComfyClient):
+    logger.info("Processing job id=%s workflow_id=%s", job.id, job.workflow_id)
     job.status = JobStatus.SUBMITTED
     db.add(job)
     db.commit()
@@ -200,9 +240,11 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
         job.end_time = datetime.now(UTC)
         db.add(job)
         db.commit()
+        logger.error("Job id=%s failed: ComfyUI did not return prompt_id", job.id)
         return
     db.add(job)
     db.commit()
+    logger.info("Job id=%s submitted to ComfyUI as prompt_id=%s", job.id, job.comfy_job_id)
 
     while True:
         status = await client.get_job(job.comfy_job_id)
@@ -213,20 +255,28 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
             job.start_time = datetime.now(UTC)
             db.add(job)
             db.commit()
+            logger.info("Job id=%s is now RUNNING", job.id)
 
         if status_str in ("completed", "failed", "cancelled"):
             job.end_time = datetime.now(UTC)
             if status_str == "completed":
                 try:
-                    await _ingest_job_outputs(db, job, status, client)
+                    ingested_count = await _ingest_job_outputs(db, job, status, client)
                     job.status = JobStatus.GENERATED
                     job.error_message = None
+                    logger.info(
+                        "Job id=%s completed successfully, ingested_assets=%s",
+                        job.id,
+                        ingested_count,
+                    )
                 except Exception as exc:
                     job.status = JobStatus.FAILED
                     job.error_message = f"Output ingestion failed: {exc}"
+                    logger.exception("Job id=%s failed during output ingestion", job.id)
             elif status_str == "cancelled":
                 job.status = JobStatus.CANCELLED
                 job.error_message = None
+                logger.warning("Job id=%s was cancelled by ComfyUI", job.id)
             else:
                 job.status = JobStatus.FAILED
                 job.error_message = (
@@ -234,6 +284,7 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
                     or status.get("execution_status", {}).get("status_str")
                     or "ComfyUI job failed"
                 )
+                logger.error("Job id=%s failed in ComfyUI: %s", job.id, job.error_message)
             db.add(job)
             db.commit()
             break
@@ -242,8 +293,8 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
 
 
 async def worker_loop():
-    client = ComfyClient()
-    try:
+    async with ComfyClient() as client:
+        logger.info("Worker loop started (poll_interval_sec=%s)", settings.poll_interval_sec)
         while True:
             db = SessionLocal()
             try:
@@ -260,13 +311,19 @@ async def worker_loop():
                 _ = job.workflow
                 _ = job.workflow_version
                 _ = job.input_values
-                await process_job(db, job, client)
+                try:
+                    await process_job(db, job, client)
+                except Exception as exc:
+                    logger.exception("Unexpected worker error while processing job id=%s", job.id)
+                    job.status = JobStatus.FAILED
+                    job.end_time = datetime.now(UTC)
+                    job.error_message = f"Worker exception: {exc}"
+                    db.add(job)
+                    db.commit()
             finally:
                 db.close()
-    finally:
-        await client.close()
 
 
 if __name__ == "__main__":
+    configure_logging()
     asyncio.run(worker_loop())
-

@@ -128,3 +128,30 @@ class ExportOut(BaseModel):
     manifest_path: Optional[str]
 
     model_config = {"from_attributes": True}
+
+
+class AuthLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthRefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class AuthLogoutRequest(BaseModel):
+    refresh_token: str
+
+
+class AuthUserOut(BaseModel):
+    id: str
+    username: str
+    roles: list[str]
+
+
+class AuthTokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in_seconds: int
+    refresh_token: str
+    user: AuthUserOut

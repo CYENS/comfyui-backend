@@ -8,6 +8,12 @@ class ComfyClient:
         self.base_url = base_url or settings.comfy_base_url
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=None)
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.close()
+
     async def submit_prompt(self, prompt: dict, extra_data: dict) -> dict:
         payload = {"prompt": prompt, "extra_data": extra_data}
         resp = await self.client.post("/prompt", json=payload)

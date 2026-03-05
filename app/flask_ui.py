@@ -61,6 +61,16 @@ def index():
 let promptJson = null;
 let candidates = [];
 
+function authHeaders() {
+  const token = localStorage.getItem('auth.access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function authFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders() };
+  return fetch(url, { ...options, headers });
+}
+
 function renderCandidates() {
   const el = document.getElementById('candidates');
   el.innerHTML = '';
@@ -92,7 +102,7 @@ function renderCandidates() {
 
 async function parsePrompt() {
   if (!promptJson) return;
-  const res = await fetch('/api/workflows/parse', {
+  const res = await authFetch('/api/workflows/parse', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt_json: promptJson })
@@ -142,7 +152,7 @@ async function saveWorkflow() {
     inputs_schema_json: inputs_schema
   };
 
-  const res = await fetch('/api/workflows', {
+  const res = await authFetch('/api/workflows', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -242,8 +252,18 @@ def workflows_crud():
   <pre id="result"></pre>
 
 <script>
+function authHeaders() {
+  const token = localStorage.getItem('auth.access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function authFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders() };
+  return fetch(url, { ...options, headers });
+}
+
 async function refreshList() {
-  const res = await fetch('/api/workflows');
+  const res = await authFetch('/api/workflows');
   const data = await res.json();
   const rows = document.getElementById('rows');
   rows.innerHTML = '';
@@ -263,7 +283,7 @@ async function refreshList() {
 }
 
 async function loadWorkflow(id) {
-  const res = await fetch(`/api/workflows/${id}`);
+  const res = await authFetch(`/api/workflows/${id}`);
   const wf = await res.json();
   document.getElementById('wf_id').value = wf.id;
   document.getElementById('key').value = wf.key || '';
@@ -288,7 +308,7 @@ async function createWorkflow() {
     prompt_json: parseJsonField('prompt_json') || {},
     inputs_schema_json: parseJsonField('inputs_schema') || []
   };
-  const res = await fetch('/api/workflows', {
+  const res = await authFetch('/api/workflows', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -307,7 +327,7 @@ async function updateWorkflow() {
     prompt_json: parseJsonField('prompt_json'),
     inputs_schema_json: parseJsonField('inputs_schema')
   };
-  const res = await fetch(`/api/workflows/${id}`, {
+  const res = await authFetch(`/api/workflows/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -320,7 +340,7 @@ async function updateWorkflow() {
 async function deleteWorkflow() {
   const id = document.getElementById('wf_id').value.trim();
   if (!id) return alert('Workflow ID required for delete');
-  const res = await fetch(`/api/workflows/${id}`, { method: 'DELETE' });
+  const res = await authFetch(`/api/workflows/${id}`, { method: 'DELETE' });
   const data = await res.json();
   document.getElementById('result').textContent = JSON.stringify(data, null, 2);
   await refreshList();

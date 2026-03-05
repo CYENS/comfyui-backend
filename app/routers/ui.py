@@ -21,6 +21,7 @@ def ui_index():
 <body>
   <div class="crumbs"><a href="/ui">Home</a></div>
   <h1>ComfyUI Wrapper</h1>
+  <a href="/ui/auth">Auth</a>
   <a href="/ui/workflows">Workflows</a>
   <a href="/ui/builder/">Workflow Builder</a>
   <a href="/ui/builder/workflows">Workflow CRUD</a>
@@ -34,6 +35,96 @@ def ui_index():
 @router.get("/index", response_class=HTMLResponse)
 def ui_index_alias():
     return ui_index()
+
+
+@router.get("/auth", response_class=HTMLResponse)
+def ui_auth():
+    return HTMLResponse("""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Auth</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .crumbs { margin-bottom: 12px; }
+    .crumbs a { text-decoration: none; color: #0a58ca; }
+    .row { margin: 10px 0; max-width: 380px; }
+    .row label { display: block; margin-bottom: 4px; font-weight: bold; }
+    .row input { width: 100%; box-sizing: border-box; padding: 8px; }
+    button { margin-right: 8px; }
+    pre { background: #f7f7f7; padding: 12px; border: 1px solid #ddd; }
+  </style>
+</head>
+<body>
+  <div class="crumbs"><a href="/ui">Home</a> / <a href="/ui/auth">Auth</a></div>
+  <h1>Auth</h1>
+  <div class="row">
+    <label for="username">Username</label>
+    <input id="username" value="admin" />
+  </div>
+  <div class="row">
+    <label for="password">Password</label>
+    <input id="password" type="password" value="change-me" />
+  </div>
+  <button id="loginBtn">Login</button>
+  <button id="meBtn">Who Am I</button>
+  <button id="logoutBtn">Logout</button>
+  <pre id="result"></pre>
+  <script>
+    const ACCESS_KEY = 'auth.access_token';
+    const REFRESH_KEY = 'auth.refresh_token';
+
+    function authHeaders() {
+      const token = localStorage.getItem(ACCESS_KEY);
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function login() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+      localStorage.setItem(ACCESS_KEY, data.access_token);
+      localStorage.setItem(REFRESH_KEY, data.refresh_token);
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function me() {
+      const res = await fetch('/api/auth/me', { headers: authHeaders() });
+      const data = await res.json();
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function logout() {
+      const refreshToken = localStorage.getItem(REFRESH_KEY);
+      if (refreshToken) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken })
+        });
+      }
+      localStorage.removeItem(ACCESS_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+      document.getElementById('result').textContent = JSON.stringify({ status: 'logged out' }, null, 2);
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', login);
+    document.getElementById('meBtn').addEventListener('click', me);
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+  </script>
+</body>
+</html>
+""")
 
 
 @router.get("/workflows", response_class=HTMLResponse)
@@ -96,6 +187,16 @@ def ui_workflows():
   </div>
 
   <script>
+    function authHeaders() {
+      const token = localStorage.getItem('auth.access_token');
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function authFetch(url, options = {}) {
+      const headers = { ...(options.headers || {}), ...authHeaders() };
+      return fetch(url, { ...options, headers });
+    }
+
     let workflows = [];
     let currentWorkflow = null;
     let currentVersion = null;
@@ -130,7 +231,7 @@ def ui_workflows():
     }
 
     async function loadWorkflowDetail(id) {
-      const res = await fetch(`/api/workflows/${id}`);
+      const res = await authFetch(`/api/workflows/${id}`);
       const data = await res.json();
       currentWorkflow = data;
       currentVersion = (data.versions || []).find(v => v.id === data.current_version_id) || null;
@@ -157,7 +258,7 @@ def ui_workflows():
     }
 
     async function loadWorkflows() {
-      const res = await fetch('/api/workflows');
+      const res = await authFetch('/api/workflows');
       workflows = await res.json();
       renderWorkflowTable();
       if (workflows.length && !currentWorkflow) {
@@ -178,7 +279,7 @@ def ui_workflows():
         params[input.id] = value;
       });
 
-      const res = await fetch('/api/jobs', {
+      const res = await authFetch('/api/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workflow_id: currentWorkflow.id, params })
@@ -195,7 +296,7 @@ def ui_workflows():
         inputs_schema_json: currentVersion.inputs_schema_json,
         change_note: changeNote
       };
-      const res = await fetch(`/api/workflows/${currentWorkflow.id}`, {
+      const res = await authFetch(`/api/workflows/${currentWorkflow.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -209,7 +310,7 @@ def ui_workflows():
     async function deleteWorkflow() {
       if (!currentWorkflow) return;
       if (!window.confirm(`Delete workflow "${currentWorkflow.name}"?`)) return;
-      const res = await fetch(`/api/workflows/${currentWorkflow.id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/workflows/${currentWorkflow.id}`, { method: 'DELETE' });
       const data = await res.json();
       document.getElementById('result').textContent = JSON.stringify(data, null, 2);
       currentWorkflow = null;
@@ -225,7 +326,7 @@ def ui_workflows():
       if (!key) return;
       const name = window.prompt('New workflow name', `${currentWorkflow.name} Copy`);
       if (!name) return;
-      const res = await fetch(`/api/workflows/${currentWorkflow.id}/duplicate`, {
+      const res = await authFetch(`/api/workflows/${currentWorkflow.id}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, name })
@@ -277,8 +378,13 @@ def ui_jobs():
   </table>
 
   <script>
+    function authHeaders() {
+      const token = localStorage.getItem('auth.access_token');
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
     async function loadJobs() {
-      const res = await fetch('/api/jobs');
+      const res = await fetch('/api/jobs', { headers: authHeaders() });
       const data = await res.json();
       const rows = document.getElementById('rows');
       rows.innerHTML = '';
@@ -327,8 +433,30 @@ def ui_assets():
   </table>
 
   <script>
+    function authHeaders() {
+      const token = localStorage.getItem('auth.access_token');
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function downloadAsset(assetId) {
+      const res = await fetch(`/api/assets/${assetId}/download`, { headers: authHeaders() });
+      if (!res.ok) {
+        alert(`Download failed: ${res.status}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = assetId;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
     async function loadAssets() {
-      const res = await fetch('/api/assets');
+      const res = await fetch('/api/assets', { headers: authHeaders() });
       const data = await res.json();
       const rows = document.getElementById('rows');
       rows.innerHTML = '';
@@ -339,9 +467,12 @@ def ui_assets():
           <td>${asset.job_id}</td>
           <td>${asset.type}</td>
           <td>${asset.size_bytes}</td>
-          <td><a href="/api/assets/${asset.id}/download">Download</a></td>
+          <td><button data-download-id="${asset.id}">Download</button></td>
         `;
         rows.appendChild(tr);
+      });
+      rows.querySelectorAll('[data-download-id]').forEach((el) => {
+        el.addEventListener('click', () => downloadAsset(el.dataset.downloadId));
       });
     }
     loadAssets();

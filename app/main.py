@@ -7,7 +7,7 @@ from starlette.middleware.wsgi import WSGIMiddleware
 
 from .db import Base, SessionLocal, engine
 from .flask_ui import app as flask_ui_app
-from .routers import assets, export, jobs, review, ui, workflows
+from .routers import assets, auth, export, jobs, review, ui, workflows
 from .seeding import seed_roles_and_system_user, seed_workflows
 
 
@@ -35,6 +35,7 @@ app.include_router(jobs.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(review.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(ui.router)
 app.mount("/ui/builder", WSGIMiddleware(flask_ui_app))
 
@@ -52,4 +53,3 @@ def ui_root_index():
 @app.get("/", response_class=HTMLResponse)
 def ui_root():
     return RedirectResponse(url="/ui")
-
