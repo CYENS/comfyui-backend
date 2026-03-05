@@ -47,10 +47,14 @@ def main() -> None:
 
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+    admin_username = ""
+    admin_user_id = ""
     try:
         seed_roles_and_system_user(db)
         seed_workflows(db)
         user = seed_admin_user(db, username=username, password=password)
+        admin_username = user.username
+        admin_user_id = user.id
 
         def seed_optional(env_user: str, env_pass: str, roles: list[RoleName]) -> None:
             u = os.environ.get(env_user)
@@ -85,7 +89,7 @@ def main() -> None:
     finally:
         db.close()
 
-    print(f"Seeding complete. Admin username={user.username} user_id={user.id}")
+    print(f"Seeding complete. Admin username={admin_username} user_id={admin_user_id}")
 
 
 if __name__ == "__main__":
