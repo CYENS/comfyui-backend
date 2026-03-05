@@ -427,15 +427,25 @@ def ui_assets():
   <h1>Assets</h1>
   <table>
     <thead>
-      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Download</th></tr>
+      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Status</th><th>Validated</th><th>Download</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
 
   <script>
+    let isModerator = false;
+
     function authHeaders() {
       const token = localStorage.getItem('auth.access_token');
       return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function loadMe() {
+      const res = await fetch('/api/auth/me', { headers: authHeaders() });
+      if (!res.ok) return;
+      const me = await res.json();
+      const roles = me.roles || [];
+      isModerator = roles.includes('moderator') || roles.includes('admin');
     }
 
     async function downloadAsset(assetId) {
@@ -455,18 +465,41 @@ def ui_assets():
       URL.revokeObjectURL(url);
     }
 
+    async function setValidation(assetId, checked) {
+      if (!isModerator) return;
+      const payload = {
+        status: checked ? 'APPROVED' : 'REJECTED',
+        notes: checked ? 'Validated from moderator table' : 'Rejected from moderator table'
+      };
+      const res = await fetch(`/api/assets/${assetId}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Validation failed: ${res.status} ${err.detail || ''}`);
+      }
+      await loadAssets();
+    }
+
     async function loadAssets() {
-      const res = await fetch('/api/assets', { headers: authHeaders() });
+      const res = await fetch('/api/assets?mine=false', { headers: authHeaders() });
       const data = await res.json();
       const rows = document.getElementById('rows');
       rows.innerHTML = '';
       data.forEach(asset => {
+        const isApproved = asset.validation_status === 'APPROVED';
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${asset.id}</td>
           <td>${asset.job_id}</td>
           <td>${asset.type}</td>
           <td>${asset.size_bytes}</td>
+          <td>${asset.validation_status || 'PENDING'}</td>
+          <td>
+            <input type="checkbox" data-validate-id="${asset.id}" ${isApproved ? 'checked' : ''} ${isModerator ? '' : 'disabled'} />
+          </td>
           <td><button data-download-id="${asset.id}">Download</button></td>
         `;
         rows.appendChild(tr);
@@ -474,8 +507,11 @@ def ui_assets():
       rows.querySelectorAll('[data-download-id]').forEach((el) => {
         el.addEventListener('click', () => downloadAsset(el.dataset.downloadId));
       });
+      rows.querySelectorAll('[data-validate-id]').forEach((el) => {
+        el.addEventListener('change', () => setValidation(el.dataset.validateId, el.checked));
+      });
     }
-    loadAssets();
+    loadMe().then(loadAssets);
   </script>
 </body>
 </html>

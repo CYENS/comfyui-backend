@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -41,11 +42,20 @@ def list_assets(
     if mine and not user.has(RoleName.ADMIN):
         q = q.join(Job).filter(Job.user_id == user.id)
 
-    # Non-moderator/admin can only see approved assets
+    # Non-moderator/admin visibility:
+    # - mine=true  => all own assets (including pending/rejected)
+    # - mine=false => approved assets from others + all own assets
     if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
-        q = q.join(
+        q = q.outerjoin(
             AssetValidationCurrent, AssetValidationCurrent.asset_id == Asset.id
-        ).filter(AssetValidationCurrent.status == ValidationStatus.APPROVED)
+        ).join(Job, Job.id == Asset.job_id)
+        if not mine:
+            q = q.filter(
+                or_(
+                    Job.user_id == user.id,
+                    AssetValidationCurrent.status == ValidationStatus.APPROVED,
+                )
+            )
 
     assets = q.order_by(Asset.created_at.desc()).all()
     return [_asset_to_out(asset) for asset in assets]
@@ -62,10 +72,12 @@ def get_asset(
         raise HTTPException(status_code=404, detail="Asset not found")
 
     if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
-        if (
-            asset.validation_current is None
-            or asset.validation_current.status != ValidationStatus.APPROVED
-        ):
+        is_owner = asset.job is not None and asset.job.user_id == user.id
+        is_approved = (
+            asset.validation_current is not None
+            and asset.validation_current.status == ValidationStatus.APPROVED
+        )
+        if not is_owner and not is_approved:
             raise HTTPException(status_code=403, detail="Forbidden")
 
     return _asset_to_out(asset)
@@ -82,10 +94,12 @@ def download_asset(
         raise HTTPException(status_code=404, detail="Asset not found")
 
     if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
-        if (
-            asset.validation_current is None
-            or asset.validation_current.status != ValidationStatus.APPROVED
-        ):
+        is_owner = asset.job is not None and asset.job.user_id == user.id
+        is_approved = (
+            asset.validation_current is not None
+            and asset.validation_current.status == ValidationStatus.APPROVED
+        )
+        if not is_owner and not is_approved:
             raise HTTPException(status_code=403, detail="Forbidden")
 
     download_name = asset.original_filename or f"{asset.id}.bin"
