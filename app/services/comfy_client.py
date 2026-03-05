@@ -19,5 +19,15 @@ class ComfyClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def download_view(
+        self, filename: str, subfolder: str | None = None, type_: str = "output"
+    ) -> tuple[bytes, str | None]:
+        params: dict[str, Any] = {"filename": filename, "type": type_}
+        if subfolder:
+            params["subfolder"] = subfolder
+        resp = await self.client.get("/view", params=params)
+        resp.raise_for_status()
+        return resp.content, resp.headers.get("content-type")
+
     async def close(self):
         await self.client.aclose()

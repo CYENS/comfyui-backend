@@ -321,7 +321,7 @@ def ui_assets():
   <h1>Assets</h1>
   <table>
     <thead>
-      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th></tr>
+      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Download</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -339,6 +339,7 @@ def ui_assets():
           <td>${asset.job_id}</td>
           <td>${asset.type}</td>
           <td>${asset.size_bytes}</td>
+          <td><a href="/api/assets/${asset.id}/download">Download</a></td>
         `;
         rows.appendChild(tr);
       });

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -68,3 +69,28 @@ def get_asset(
             raise HTTPException(status_code=403, detail="Forbidden")
 
     return _asset_to_out(asset)
+
+
+@router.get("/{asset_id}/download")
+def download_asset(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    asset = db.query(Asset).filter(Asset.id == asset_id).one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
+        if (
+            asset.validation_current is None
+            or asset.validation_current.status != ValidationStatus.APPROVED
+        ):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    download_name = asset.original_filename or f"{asset.id}.bin"
+    return FileResponse(
+        path=asset.file_path,
+        media_type=asset.media_type or "application/octet-stream",
+        filename=download_name,
+    )
