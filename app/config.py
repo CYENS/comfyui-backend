@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     auth_dev_mode: bool = True
     auth_dev_user_id: str = "dev-admin"
     auth_dev_user_roles: str = "admin"
+    comfy_models_dir: str = "/app/models"
 
 
 settings = Settings()

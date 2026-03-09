@@ -1,13 +1,17 @@
 import hashlib
 import json
+import logging
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Asset, Job, RoleName, Workflow, WorkflowVersion
+from ..models import Asset, Job, RoleName, Workflow, WorkflowModelRequirement, WorkflowVersion
 from ..schemas import (
+    ModelRequirementOut,
+    ModelRequirementUrlUpdate,
     WorkflowCreate,
     WorkflowDetailOut,
     WorkflowDuplicateRequest,
@@ -15,9 +19,18 @@ from ..schemas import (
     WorkflowListOut,
     WorkflowParseRequest,
     WorkflowParseResponse,
+    WorkflowRequirementsResponse,
     WorkflowUpdate,
 )
 from ..services.auth import CurrentUser, get_current_user, require_any_role
+from ..services.comfy_client import ComfyClient
+from ..services.model_requirements import (
+    extract_from_api_json,
+    extract_from_ui_json,
+    validate_download_url,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -57,6 +70,40 @@ def _parse_prompt_candidates(prompt: dict) -> list[dict]:
                 }
             )
     return candidates
+
+
+def _extract_requirements(
+    prompt_json: dict,
+    ui_json: dict | None,
+) -> list[dict]:
+    """Return extracted requirements, preferring ui_json when available."""
+    if ui_json is not None:
+        return extract_from_ui_json(ui_json)
+    return extract_from_api_json(prompt_json)
+
+
+def _persist_requirements(db: Session, version_id: str, raw: list[dict]) -> None:
+    """Delete old requirements for this version and insert new ones."""
+    db.query(WorkflowModelRequirement).filter(
+        WorkflowModelRequirement.workflow_version_id == version_id
+    ).delete()
+    for r in raw:
+        url = r.get("download_url")
+        if url:
+            try:
+                url = validate_download_url(url)
+            except ValueError:
+                logger.warning("Discarding invalid download URL for %s: %r", r["model_name"], url)
+                url = None
+        db.add(WorkflowModelRequirement(
+            id=str(uuid.uuid4()),
+            workflow_version_id=version_id,
+            model_name=r["model_name"],
+            folder=r["folder"],
+            model_type=r["model_type"],
+            download_url=url,
+            url_approved=False,
+        ))
 
 
 @router.post("/parse", response_model=WorkflowParseResponse)
@@ -116,6 +163,11 @@ def create_workflow(
 
     wf.current_version_id = ver.id
     db.add(wf)
+    db.flush()
+
+    raw_reqs = _extract_requirements(payload.prompt_json, payload.ui_json)
+    _persist_requirements(db, ver.id, raw_reqs)
+
     db.commit()
     db.refresh(wf)
     return wf
@@ -183,6 +235,10 @@ def update_workflow(
         db.flush()
         wf.current_version_id = ver.id
 
+        if payload.prompt_json is not None:
+            raw_reqs = _extract_requirements(prompt_json, payload.ui_json)
+            _persist_requirements(db, ver.id, raw_reqs)
+
     db.add(wf)
     db.commit()
     db.refresh(wf)
@@ -232,6 +288,10 @@ def duplicate_workflow(
     )
     db.add(ver)
     db.flush()
+
+    # Copy requirements from the source version (without URL approval)
+    raw_reqs = extract_from_api_json(src.prompt_json)
+    _persist_requirements(db, ver.id, raw_reqs)
 
     wf.current_version_id = ver.id
     db.add(wf)
@@ -291,3 +351,108 @@ def delete_workflow(
     db.delete(wf)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.get("/{workflow_id}/requirements", response_model=WorkflowRequirementsResponse)
+async def get_workflow_requirements(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    wf = db.query(Workflow).filter(Workflow.id == workflow_id).one_or_none()
+    if wf is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if wf.current_version is None:
+        return WorkflowRequirementsResponse(requirements=[], all_available=True, missing=[])
+
+    reqs = wf.current_version.model_requirements
+    if not reqs:
+        return WorkflowRequirementsResponse(requirements=[], all_available=True, missing=[])
+
+    req_dicts = [
+        {"folder": r.folder, "model_name": r.model_name, "model_type": r.model_type, "_id": r.id}
+        for r in reqs
+    ]
+
+    try:
+        async with ComfyClient() as client:
+            enriched = await client.check_models_available(req_dicts)
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        raise HTTPException(status_code=503, detail="ComfyUI is unreachable")
+
+    # Build response, merging DB fields with availability result
+    req_by_id = {r.id: r for r in reqs}
+    out_list: list[ModelRequirementOut] = []
+    for item in enriched:
+        db_req = req_by_id[item["_id"]]
+        out_list.append(ModelRequirementOut(
+            id=db_req.id,
+            model_name=db_req.model_name,
+            folder=db_req.folder,
+            model_type=db_req.model_type,
+            download_url=db_req.download_url,
+            url_approved=db_req.url_approved,
+            approved_by_username=db_req.approved_by.username if db_req.approved_by else None,
+            approved_at=db_req.approved_at,
+            available=item["available"],
+        ))
+
+    missing = [r for r in out_list if not r.available]
+    return WorkflowRequirementsResponse(
+        requirements=out_list,
+        all_available=len(missing) == 0,
+        missing=missing,
+    )
+
+
+@router.patch(
+    "/{workflow_id}/requirements/{req_id}",
+    response_model=ModelRequirementOut,
+)
+def update_requirement_url(
+    workflow_id: str,
+    req_id: str,
+    payload: ModelRequirementUrlUpdate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    wf = db.query(Workflow).filter(Workflow.id == workflow_id).one_or_none()
+    if wf is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    is_admin = user.has(RoleName.ADMIN)
+    if not is_admin:
+        require_any_role(user, RoleName.WORKFLOW_CREATOR)
+        if wf.created_by_user_id != user.id:
+            raise HTTPException(status_code=403, detail="Cannot edit requirements for workflows you do not own")
+
+    req = db.query(WorkflowModelRequirement).filter(
+        WorkflowModelRequirement.id == req_id,
+        WorkflowModelRequirement.workflow_version_id == wf.current_version_id,
+    ).one_or_none()
+    if req is None:
+        raise HTTPException(status_code=404, detail="Model requirement not found")
+
+    try:
+        validated_url = validate_download_url(payload.download_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    req.download_url = validated_url
+    req.url_approved = False
+    req.approved_by_user_id = None
+    req.approved_at = None
+    db.commit()
+    db.refresh(req)
+
+    return ModelRequirementOut(
+        id=req.id,
+        model_name=req.model_name,
+        folder=req.folder,
+        model_type=req.model_type,
+        download_url=req.download_url,
+        url_approved=req.url_approved,
+        approved_by_username=None,
+        approved_at=None,
+        available=None,
+    )

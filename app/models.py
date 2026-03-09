@@ -167,6 +167,11 @@ class WorkflowVersion(Base):
         "Workflow", back_populates="versions", foreign_keys="WorkflowVersion.workflow_id"
     )
     jobs = relationship("Job", back_populates="workflow_version")
+    model_requirements = relationship(
+        "WorkflowModelRequirement",
+        back_populates="workflow_version",
+        cascade="all, delete-orphan",
+    )
 
 
 class Job(Base):
@@ -306,6 +311,26 @@ class AssetExport(Base):
     exported_at = Column(DateTime, nullable=True)
 
     asset = relationship("Asset", back_populates="export")
+
+
+class WorkflowModelRequirement(Base):
+    __tablename__ = "workflow_model_requirements"
+
+    id = Column(String(36), primary_key=True)
+    workflow_version_id = Column(
+        String(36), ForeignKey("workflow_versions.id", ondelete="CASCADE"), nullable=False
+    )
+    model_name = Column(String(512), nullable=False)
+    folder = Column(String(128), nullable=False)
+    model_type = Column(String(64), nullable=False)
+    download_url = Column(Text, nullable=True)
+    url_approved = Column(Boolean, default=False, nullable=False)
+    approved_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    workflow_version = relationship("WorkflowVersion", back_populates="model_requirements")
+    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
 
 
 class RefreshToken(Base):

@@ -35,5 +35,51 @@ class ComfyClient:
         resp.raise_for_status()
         return resp.content, resp.headers.get("content-type")
 
+    async def get_folder_models(self, folder: str) -> list[str]:
+        """
+        Return the list of model filenames available in a ComfyUI model folder.
+        Calls GET /models/{folder} on the ComfyUI instance.
+        Returns an empty list if the folder is unknown to ComfyUI.
+        """
+        resp = await self.client.get(f"/models/{folder}")
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, list):
+            return [str(item) for item in data]
+        return []
+
+    async def check_models_available(self, requirements: list[dict]) -> list[dict]:
+        """
+        Enrich each requirement dict with an ``available`` bool by checking
+        ComfyUI's model folder listings.
+
+        Each requirement dict must have at least ``folder`` and ``model_name`` keys.
+        Returns a new list of dicts with the same keys plus ``available``.
+
+        Raises ``httpx.ConnectError`` / ``httpx.HTTPStatusError`` if ComfyUI is
+        unreachable — callers should catch and convert to HTTP 503.
+        """
+        # Fetch each unique folder once
+        folder_cache: dict[str, set[str]] = {}
+        for req in requirements:
+            folder = req["folder"]
+            if folder not in folder_cache:
+                names = await self.get_folder_models(folder)
+                folder_cache[folder] = set(names)
+
+        enriched = []
+        for req in requirements:
+            available_names = folder_cache.get(req["folder"], set())
+            model_name = req["model_name"]
+            # Match exactly, or by basename for models stored in sub-folders
+            available = model_name in available_names or any(
+                n.endswith("/" + model_name) or n.endswith("\\" + model_name)
+                for n in available_names
+            )
+            enriched.append({**req, "available": available})
+        return enriched
+
     async def close(self):
         await self.client.aclose()

@@ -1,13 +1,20 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
+    datefmt="%H:%M:%S",
+)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from starlette.middleware.wsgi import WSGIMiddleware
 
 from .db import Base, SessionLocal, engine
 from .flask_ui import app as flask_ui_app
-from .routers import assets, auth, export, jobs, review, ui, workflows
+from .routers import admin, assets, auth, export, jobs, review, ui, workflows
 from .seeding import seed_roles_and_system_user, seed_workflows
 
 
@@ -32,6 +39,7 @@ app = FastAPI(
 
 app.include_router(workflows.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 app.include_router(assets.router, prefix="/api")
 app.include_router(review.router, prefix="/api")
 app.include_router(export.router, prefix="/api")

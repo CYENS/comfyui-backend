@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
@@ -8,6 +9,7 @@ from ..db import get_db
 from ..models import Job, JobInputValue, JobStatus, RoleName, Workflow, WorkflowVersion
 from ..schemas import JobCreate, JobOut
 from ..services.auth import CurrentUser, get_current_user, require_any_role
+from ..services.comfy_client import ComfyClient
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -32,7 +34,7 @@ def _job_to_out(job: Job) -> JobOut:
 
 
 @router.post("", response_model=JobOut)
-def create_job(
+async def create_job(
     payload: JobCreate,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
@@ -54,6 +56,39 @@ def create_job(
     )
     if wv is None:
         raise HTTPException(status_code=404, detail="Workflow version not found")
+
+    # Preflight: check that all required models are available in ComfyUI
+    reqs = wv.model_requirements
+    if reqs:
+        req_dicts = [
+            {"folder": r.folder, "model_name": r.model_name, "model_type": r.model_type,
+             "url_approved": r.url_approved, "_id": r.id}
+            for r in reqs
+        ]
+        try:
+            async with ComfyClient() as client:
+                enriched = await client.check_models_available(req_dicts)
+        except (httpx.ConnectError, httpx.ConnectTimeout):
+            raise HTTPException(status_code=503, detail="ComfyUI is unreachable")
+
+        missing = [r for r in enriched if not r["available"]]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "missing_models",
+                    "message": "Workflow requires models not available in ComfyUI",
+                    "missing_models": [
+                        {
+                            "model_name": r["model_name"],
+                            "folder": r["folder"],
+                            "model_type": r["model_type"],
+                            "has_approved_url": r["url_approved"],
+                        }
+                        for r in missing
+                    ],
+                },
+            )
 
     job = Job(
         id=str(uuid.uuid4()),

@@ -31,9 +31,16 @@ def index():
   <p><a href="/ui/builder/workflows">Workflow CRUD</a></p>
 
   <div class="section">
-    <label>Workflow JSON</label>
-    <textarea id="promptJson" placeholder='Paste ComfyUI prompt JSON here'></textarea>
+    <label>Workflow JSON (API format — required)</label>
+    <textarea id="promptJson" placeholder='Paste ComfyUI API-format prompt JSON here'></textarea>
     <button id="parse">Parse Prompt</button>
+
+    <label style="margin-top:16px">UI Workflow JSON (optional — for model URL extraction)</label>
+    <small style="display:block;margin-bottom:4px;color:#555">
+      Export from ComfyUI using <em>Save (UI format)</em> instead of <em>Save (API format)</em>.
+      Enables automatic extraction of HuggingFace / Civitai download URLs embedded by ComfyUI.
+    </small>
+    <textarea id="uiJson" placeholder='Paste ComfyUI UI-format workflow JSON here (optional)'></textarea>
   </div>
 
   <div class="section">
@@ -143,13 +150,25 @@ async function saveWorkflow() {
     return;
   }
 
+  let uiJson = null;
+  const rawUiJson = document.getElementById('uiJson').value.trim();
+  if (rawUiJson) {
+    try {
+      uiJson = JSON.parse(rawUiJson);
+    } catch (e) {
+      alert('UI JSON is not valid JSON: ' + e.message);
+      return;
+    }
+  }
+
   const inputs_schema = buildInputsSchema();
   const payload = {
     key,
     name,
     description,
     prompt_json: promptJson,
-    inputs_schema_json: inputs_schema
+    inputs_schema_json: inputs_schema,
+    ...(uiJson !== null && { ui_json: uiJson }),
   };
 
   const res = await authFetch('/api/workflows', {
@@ -244,6 +263,10 @@ def workflows_crud():
     <label>Inputs Schema (JSON)</label>
     <textarea id="inputs_schema" placeholder='[{"id":"text","mapping":[...]}]'></textarea>
   </div>
+  <div class="row">
+    <label>UI Workflow JSON (optional — for model URL extraction)</label>
+    <textarea id="ui_json" placeholder='Paste ComfyUI UI-format JSON here (optional)'></textarea>
+  </div>
   <div class="row actions">
     <button id="create">Create</button>
     <button id="update">Update</button>
@@ -301,12 +324,14 @@ function parseJsonField(id) {
 }
 
 async function createWorkflow() {
+  const uiJson = parseJsonField('ui_json');
   const payload = {
     key: document.getElementById('key').value.trim(),
     name: document.getElementById('name').value.trim(),
     description: document.getElementById('description').value.trim(),
     prompt_json: parseJsonField('prompt_json') || {},
-    inputs_schema_json: parseJsonField('inputs_schema') || []
+    inputs_schema_json: parseJsonField('inputs_schema') || [],
+    ...(uiJson !== null && { ui_json: uiJson }),
   };
   const res = await authFetch('/api/workflows', {
     method: 'POST',
@@ -321,11 +346,13 @@ async function createWorkflow() {
 async function updateWorkflow() {
   const id = document.getElementById('wf_id').value.trim();
   if (!id) return alert('Workflow ID required for update');
+  const uiJson = parseJsonField('ui_json');
   const payload = {
     name: document.getElementById('name').value.trim(),
     description: document.getElementById('description').value.trim(),
     prompt_json: parseJsonField('prompt_json'),
-    inputs_schema_json: parseJsonField('inputs_schema')
+    inputs_schema_json: parseJsonField('inputs_schema'),
+    ...(uiJson !== null && { ui_json: uiJson }),
   };
   const res = await authFetch(`/api/workflows/${id}`, {
     method: 'PATCH',

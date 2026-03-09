@@ -27,6 +27,7 @@ def ui_index():
   <a href="/ui/builder/workflows">Workflow CRUD</a>
   <a href="/ui/jobs">Jobs</a>
   <a href="/ui/assets">Assets</a>
+  <a href="/ui/admin">Model Requirements (Admin)</a>
 </body>
 </html>
 """)
@@ -513,6 +514,301 @@ def ui_assets():
     }
     loadMe().then(loadAssets);
   </script>
+</body>
+</html>
+""")
+
+
+@router.get("/admin", response_class=HTMLResponse)
+def ui_admin():
+    return HTMLResponse("""
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Model Requirements Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .crumbs { margin-bottom: 12px; }
+    .crumbs a { text-decoration: none; color: #0a58ca; }
+    h2 { margin-top: 28px; border-bottom: 1px solid #ccc; padding-bottom: 6px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 13px; }
+    th, td { border: 1px solid #ccc; padding: 7px 10px; text-align: left; vertical-align: top; }
+    th { background: #f0f0f0; }
+    tr.available td:first-child { border-left: 3px solid #2e7d32; }
+    tr.missing td:first-child { border-left: 3px solid #c62828; }
+    tr.unknown td:first-child { border-left: 3px solid #999; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+    .badge.ok { background: #c8e6c9; color: #1b5e20; }
+    .badge.missing { background: #ffcdd2; color: #b71c1c; }
+    .badge.approved { background: #bbdefb; color: #0d47a1; }
+    .badge.pending { background: #fff9c4; color: #f57f17; }
+    .badge.unknown { background: #eeeeee; color: #555; }
+    button { padding: 4px 10px; cursor: pointer; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    .url-input { width: 340px; padding: 3px; font-size: 12px; }
+    select { padding: 5px; font-size: 14px; }
+    .topbar { margin-bottom: 14px; display: flex; gap: 8px; align-items: center; }
+    pre.msg { background: #f5f5f5; border: 1px solid #ddd; padding: 10px; margin-top: 10px; font-size: 12px; white-space: pre-wrap; max-height: 200px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <div class="crumbs"><a href="/ui">Home</a> / <a href="/ui/admin">Model Requirements Admin</a></div>
+  <h1>Model Requirements Admin</h1>
+
+  <!-- ── Section 1: Pending approval queue ── -->
+  <h2>Pending URL Approvals</h2>
+  <div class="topbar">
+    <button id="refreshPendingBtn">Refresh</button>
+  </div>
+  <table id="pendingTable">
+    <thead>
+      <tr>
+        <th>Workflow</th>
+        <th>Model</th>
+        <th>Folder / Type</th>
+        <th>Download URL</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="pendingRows"><tr><td colspan="5">Loading…</td></tr></tbody>
+  </table>
+
+  <!-- ── Section 2: Per-workflow requirements ── -->
+  <h2>Requirements by Workflow</h2>
+  <div class="topbar">
+    <select id="workflowSelect"><option value="">— select workflow —</option></select>
+    <button id="checkReqBtn">Check Availability</button>
+  </div>
+  <table id="reqTable">
+    <thead>
+      <tr>
+        <th>Model</th>
+        <th>Folder / Type</th>
+        <th>Available</th>
+        <th>URL</th>
+        <th>Approved</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="reqRows"><tr><td colspan="6">Select a workflow above.</td></tr></tbody>
+  </table>
+
+  <pre class="msg" id="msg"></pre>
+
+<script>
+function authHeaders() {
+  const token = localStorage.getItem('auth.access_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function authFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders() };
+  return fetch(url, { ...options, headers });
+}
+
+function log(obj) {
+  document.getElementById('msg').textContent = typeof obj === 'string'
+    ? obj
+    : JSON.stringify(obj, null, 2);
+}
+
+// ── Pending table ──────────────────────────────────────────────
+
+async function loadPending() {
+  document.getElementById('pendingRows').innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+  const res = await authFetch('/api/admin/model-requirements/pending');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    document.getElementById('pendingRows').innerHTML =
+      `<tr><td colspan="5" style="color:red">Error ${res.status}: ${err.detail || ''}</td></tr>`;
+    return;
+  }
+  const items = await res.json();
+  const tbody = document.getElementById('pendingRows');
+  tbody.innerHTML = '';
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="5">No pending approvals.</td></tr>';
+    return;
+  }
+  items.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.dataset.id = item.id;
+    tr.innerHTML = `
+      <td><strong>${escHtml(item.workflow_name)}</strong><br><small>${escHtml(item.workflow_key)}</small></td>
+      <td>${escHtml(item.model_name)}</td>
+      <td>${escHtml(item.folder)}<br><small>${escHtml(item.model_type)}</small></td>
+      <td><a href="${escHtml(item.download_url)}" target="_blank" style="word-break:break-all;font-size:11px">${escHtml(item.download_url)}</a></td>
+      <td>
+        <button data-approve="${item.id}">Approve</button>
+        <button data-reject="${item.id}">Reject</button>
+        <button data-download="${item.id}">Download</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('[data-approve]').forEach(btn =>
+    btn.addEventListener('click', () => approve(btn.dataset.approve)));
+  tbody.querySelectorAll('[data-reject]').forEach(btn =>
+    btn.addEventListener('click', () => reject(btn.dataset.reject)));
+  tbody.querySelectorAll('[data-download]').forEach(btn =>
+    btn.addEventListener('click', () => triggerDownload(btn.dataset.download)));
+}
+
+async function approve(id) {
+  const res = await authFetch(`/api/admin/model-requirements/${id}/approve`, { method: 'POST' });
+  const data = await res.json();
+  log(data);
+  await loadPending();
+  await reloadCurrentWorkflowReqs();
+}
+
+async function reject(id) {
+  if (!confirm('Clear the download URL and reset approval?')) return;
+  const res = await authFetch(`/api/admin/model-requirements/${id}/reject`, { method: 'POST' });
+  const data = await res.json();
+  log(data);
+  await loadPending();
+  await reloadCurrentWorkflowReqs();
+}
+
+async function triggerDownload(id) {
+  if (!confirm('Trigger server-side download from the approved URL?')) return;
+  const res = await authFetch(`/api/admin/model-requirements/${id}/download`, { method: 'POST' });
+  const data = await res.json();
+  log(data);
+}
+
+// ── Workflow requirements ──────────────────────────────────────
+
+let currentWorkflowId = null;
+
+async function loadWorkflows() {
+  const res = await authFetch('/api/workflows');
+  const workflows = await res.json();
+  const sel = document.getElementById('workflowSelect');
+  workflows.forEach(wf => {
+    const opt = document.createElement('option');
+    opt.value = wf.id;
+    opt.textContent = `${wf.name} (${wf.key})`;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadWorkflowRequirements(workflowId) {
+  currentWorkflowId = workflowId;
+  const tbody = document.getElementById('reqRows');
+  tbody.innerHTML = '<tr><td colspan="6">Loading…</td></tr>';
+  const res = await authFetch(`/api/workflows/${workflowId}/requirements`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    tbody.innerHTML = `<tr><td colspan="6" style="color:red">Error ${res.status}: ${JSON.stringify(err.detail || err)}</td></tr>`;
+    return;
+  }
+  const data = await res.json();
+  renderRequirements(data.requirements);
+  log({ all_available: data.all_available, missing_count: data.missing.length });
+}
+
+function renderRequirements(reqs) {
+  const tbody = document.getElementById('reqRows');
+  tbody.innerHTML = '';
+  if (!reqs.length) {
+    tbody.innerHTML = '<tr><td colspan="6">No model requirements for this workflow.</td></tr>';
+    return;
+  }
+  reqs.forEach(req => {
+    const avClass = req.available === true ? 'available' : req.available === false ? 'missing' : 'unknown';
+    const avBadge = req.available === true
+      ? '<span class="badge ok">Available</span>'
+      : req.available === false
+        ? '<span class="badge missing">Missing</span>'
+        : '<span class="badge unknown">Unknown</span>';
+    const approvedBadge = req.url_approved
+      ? `<span class="badge approved">Approved</span><br><small>${escHtml(req.approved_by_username || '')}</small>`
+      : req.download_url
+        ? '<span class="badge pending">Pending</span>'
+        : '—';
+
+    const tr = document.createElement('tr');
+    tr.className = avClass;
+    tr.dataset.id = req.id;
+    tr.innerHTML = `
+      <td>${escHtml(req.model_name)}</td>
+      <td>${escHtml(req.folder)}<br><small>${escHtml(req.model_type)}</small></td>
+      <td>${avBadge}</td>
+      <td>
+        <input class="url-input" data-url-for="${req.id}"
+               value="${escHtml(req.download_url || '')}"
+               placeholder="https://huggingface.co/…" />
+        <br>
+        <button data-set-url="${req.id}" style="margin-top:4px">Set URL</button>
+      </td>
+      <td>${approvedBadge}</td>
+      <td>
+        <button data-approve="${req.id}" ${!req.download_url ? 'disabled' : ''}>Approve</button>
+        <button data-reject="${req.id}" ${!req.download_url && !req.url_approved ? 'disabled' : ''}>Reject</button>
+        <button data-download="${req.id}" ${!req.url_approved ? 'disabled' : ''}>Download</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  tbody.querySelectorAll('[data-set-url]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.setUrl;
+      const url = tbody.querySelector(`[data-url-for="${id}"]`).value.trim();
+      await setUrl(id, url);
+    });
+  });
+  tbody.querySelectorAll('[data-approve]').forEach(btn =>
+    btn.addEventListener('click', () => approve(btn.dataset.approve)));
+  tbody.querySelectorAll('[data-reject]').forEach(btn =>
+    btn.addEventListener('click', () => reject(btn.dataset.reject)));
+  tbody.querySelectorAll('[data-download]').forEach(btn =>
+    btn.addEventListener('click', () => triggerDownload(btn.dataset.download)));
+}
+
+async function setUrl(reqId, url) {
+  if (!url) return alert('Enter a URL first.');
+  const res = await authFetch(`/api/workflows/${currentWorkflowId}/requirements/${reqId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ download_url: url }),
+  });
+  const data = await res.json();
+  log(data);
+  if (res.ok) {
+    await loadWorkflowRequirements(currentWorkflowId);
+    await loadPending();
+  }
+}
+
+async function reloadCurrentWorkflowReqs() {
+  if (currentWorkflowId) await loadWorkflowRequirements(currentWorkflowId);
+}
+
+function escHtml(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────────────
+
+document.getElementById('refreshPendingBtn').addEventListener('click', loadPending);
+
+document.getElementById('workflowSelect').addEventListener('change', async function() {
+  if (this.value) await loadWorkflowRequirements(this.value);
+});
+
+document.getElementById('checkReqBtn').addEventListener('click', async () => {
+  const id = document.getElementById('workflowSelect').value;
+  if (id) await loadWorkflowRequirements(id);
+});
+
+loadPending();
+loadWorkflows();
+</script>
 </body>
 </html>
 """)

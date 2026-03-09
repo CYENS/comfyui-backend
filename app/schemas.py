@@ -39,6 +39,30 @@ class WorkflowDetailOut(WorkflowListOut):
     versions: list[WorkflowVersionOut]
 
 
+class ModelRequirementOut(BaseModel):
+    id: str
+    model_name: str
+    folder: str
+    model_type: str
+    download_url: str | None
+    url_approved: bool
+    approved_by_username: str | None = None
+    approved_at: datetime | None
+    available: bool | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkflowRequirementsResponse(BaseModel):
+    requirements: list[ModelRequirementOut]
+    all_available: bool
+    missing: list[ModelRequirementOut]
+
+
+class ModelRequirementUrlUpdate(BaseModel):
+    download_url: str
+
+
 class WorkflowCreate(BaseModel):
     key: str
     name: str
@@ -46,6 +70,7 @@ class WorkflowCreate(BaseModel):
     prompt_json: dict[str, Any]
     inputs_schema_json: list[dict[str, Any]] | None = None
     change_note: str | None = None
+    ui_json: dict[str, Any] | None = None  # not persisted; used only for model URL extraction
 
 
 class WorkflowUpdate(BaseModel):
@@ -55,6 +80,7 @@ class WorkflowUpdate(BaseModel):
     inputs_schema_json: list[dict[str, Any]] | None = None
     change_note: str | None = None
     is_active: bool | None = None
+    ui_json: dict[str, Any] | None = None  # not persisted; used only for model URL extraction
 
 
 class WorkflowDuplicateRequest(BaseModel):
