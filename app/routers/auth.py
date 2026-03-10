@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -20,6 +20,7 @@ from ..security import (
     issue_refresh_token_value,
     verify_password,
 )
+from ..limiter import limiter
 from ..services.auth import CurrentUser, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -57,7 +58,8 @@ def _issue_token_pair(db: Session, user: User) -> AuthTokenOut:
     response_model=AuthTokenOut,
     summary="Authenticate user and issue JWT access + refresh tokens",
 )
-def login(payload: AuthLoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, payload: AuthLoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == payload.username).one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(

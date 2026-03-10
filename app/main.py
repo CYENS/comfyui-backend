@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 logging.basicConfig(
     level=logging.INFO,
@@ -9,11 +9,16 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.orm import Session
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.wsgi import WSGIMiddleware
 
 from .db import Base, SessionLocal, engine
 from .flask_ui import app as flask_ui_app
+from .limiter import limiter
 from .routers import admin, assets, auth, export, jobs, review, ui, workflows
 from .seeding import seed_roles_and_system_user, seed_workflows
 
@@ -36,6 +41,20 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+
+class HSTSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
+app.add_middleware(HSTSMiddleware)
 
 app.include_router(workflows.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")

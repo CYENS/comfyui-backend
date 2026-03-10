@@ -1,7 +1,63 @@
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 router = APIRouter(prefix="/ui", tags=["ui"])
+
+_SHARED_JS = """
+const ACCESS_KEY  = 'auth.access_token';
+const REFRESH_KEY = 'auth.refresh_token';
+
+function authHeaders() {
+  const token = localStorage.getItem(ACCESS_KEY);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// Single in-flight refresh promise so concurrent 401s don't race.
+let _refreshPromise = null;
+
+async function _refreshTokens() {
+  const refreshToken = localStorage.getItem(REFRESH_KEY);
+  if (!refreshToken) throw new Error('no refresh token');
+  const res = await fetch('/api/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!res.ok) {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    throw new Error('refresh failed');
+  }
+  const data = await res.json();
+  localStorage.setItem(ACCESS_KEY, data.access_token);
+  localStorage.setItem(REFRESH_KEY, data.refresh_token);
+}
+
+async function authFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders() };
+  let res = await fetch(url, { ...options, headers });
+  if (res.status !== 401) return res;
+
+  // Try to refresh once, then retry the original request.
+  try {
+    if (!_refreshPromise) {
+      _refreshPromise = _refreshTokens().finally(() => { _refreshPromise = null; });
+    }
+    await _refreshPromise;
+  } catch {
+    window.location.href = '/ui/auth?reason=session_expired';
+    throw new Error('Session expired — redirecting to login');
+  }
+
+  const retryHeaders = { ...(options.headers || {}), ...authHeaders() };
+  return fetch(url, { ...options, headers: retryHeaders });
+}
+"""
+
+
+@router.get("/shared.js")
+def shared_js():
+    return Response(content=_SHARED_JS, media_type="application/javascript")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -72,15 +128,8 @@ def ui_auth():
   <button id="meBtn">Who Am I</button>
   <button id="logoutBtn">Logout</button>
   <pre id="result"></pre>
+  <script src="/ui/shared.js"></script>
   <script>
-    const ACCESS_KEY = 'auth.access_token';
-    const REFRESH_KEY = 'auth.refresh_token';
-
-    function authHeaders() {
-      const token = localStorage.getItem(ACCESS_KEY);
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    }
-
     async function login() {
       const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
@@ -187,17 +236,8 @@ def ui_workflows():
     </div>
   </div>
 
+  <script src="/ui/shared.js"></script>
   <script>
-    function authHeaders() {
-      const token = localStorage.getItem('auth.access_token');
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    }
-
-    async function authFetch(url, options = {}) {
-      const headers = { ...(options.headers || {}), ...authHeaders() };
-      return fetch(url, { ...options, headers });
-    }
-
     let workflows = [];
     let currentWorkflow = null;
     let currentVersion = null;
@@ -378,14 +418,10 @@ def ui_jobs():
     <tbody id="rows"></tbody>
   </table>
 
+  <script src="/ui/shared.js"></script>
   <script>
-    function authHeaders() {
-      const token = localStorage.getItem('auth.access_token');
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    }
-
     async function loadJobs() {
-      const res = await fetch('/api/jobs', { headers: authHeaders() });
+      const res = await authFetch('/api/jobs');
       const data = await res.json();
       const rows = document.getElementById('rows');
       rows.innerHTML = '';
@@ -433,16 +469,12 @@ def ui_assets():
     <tbody id="rows"></tbody>
   </table>
 
+  <script src="/ui/shared.js"></script>
   <script>
     let isModerator = false;
 
-    function authHeaders() {
-      const token = localStorage.getItem('auth.access_token');
-      return token ? { Authorization: `Bearer ${token}` } : {};
-    }
-
     async function loadMe() {
-      const res = await fetch('/api/auth/me', { headers: authHeaders() });
+      const res = await authFetch('/api/auth/me');
       if (!res.ok) return;
       const me = await res.json();
       const roles = me.roles || [];
@@ -596,16 +628,8 @@ def ui_admin():
 
   <pre class="msg" id="msg"></pre>
 
+<script src="/ui/shared.js"></script>
 <script>
-function authHeaders() {
-  const token = localStorage.getItem('auth.access_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function authFetch(url, options = {}) {
-  const headers = { ...(options.headers || {}), ...authHeaders() };
-  return fetch(url, { ...options, headers });
-}
 
 function log(obj) {
   document.getElementById('msg').textContent = typeof obj === 'string'

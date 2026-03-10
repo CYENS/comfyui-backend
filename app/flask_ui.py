@@ -64,19 +64,11 @@ def index():
     <pre id="result"></pre>
   </div>
 
+<script src="/ui/shared.js"></script>
 <script>
 let promptJson = null;
 let candidates = [];
 
-function authHeaders() {
-  const token = localStorage.getItem('auth.access_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function authFetch(url, options = {}) {
-  const headers = { ...(options.headers || {}), ...authHeaders() };
-  return fetch(url, { ...options, headers });
-}
 
 function renderCandidates() {
   const el = document.getElementById('candidates');
@@ -274,16 +266,8 @@ def workflows_crud():
   </div>
   <pre id="result"></pre>
 
+<script src="/ui/shared.js"></script>
 <script>
-function authHeaders() {
-  const token = localStorage.getItem('auth.access_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function authFetch(url, options = {}) {
-  const headers = { ...(options.headers || {}), ...authHeaders() };
-  return fetch(url, { ...options, headers });
-}
 
 async function refreshList() {
   const res = await authFetch('/api/workflows');
