@@ -27,8 +27,7 @@ def _job_to_out(job: Job) -> JobOut:
         error_message=job.error_message,
         submitted_at=job.submitted_at,
         inputs=[
-            {"input_id": item.input_id, "value_json": item.value_json}
-            for item in job.input_values
+            {"input_id": item.input_id, "value_json": item.value_json} for item in job.input_values
         ],
     )
 
@@ -61,8 +60,13 @@ async def create_job(
     reqs = wv.model_requirements
     if reqs:
         req_dicts = [
-            {"folder": r.folder, "model_name": r.model_name, "model_type": r.model_type,
-             "url_approved": r.url_approved, "_id": r.id}
+            {
+                "folder": r.folder,
+                "model_name": r.model_name,
+                "model_type": r.model_type,
+                "url_approved": r.url_approved,
+                "_id": r.id,
+            }
             for r in reqs
         ]
         try:
@@ -113,12 +117,7 @@ async def create_job(
 
     db.commit()
     db.refresh(job)
-    job = (
-        db.query(Job)
-        .options(joinedload(Job.input_values))
-        .filter(Job.id == job.id)
-        .one()
-    )
+    job = db.query(Job).options(joinedload(Job.input_values)).filter(Job.id == job.id).one()
     return _job_to_out(job)
 
 
@@ -144,12 +143,7 @@ def get_job(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    job = (
-        db.query(Job)
-        .options(joinedload(Job.input_values))
-        .filter(Job.id == job_id)
-        .one_or_none()
-    )
+    job = db.query(Job).options(joinedload(Job.input_values)).filter(Job.id == job_id).one_or_none()
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     if not user.has(RoleName.ADMIN) and job.user_id != user.id:

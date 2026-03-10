@@ -50,7 +50,9 @@ def configure_logging() -> None:
     except Exception:
         logger.exception("Failed to initialize file logging at %s", log_path)
 
-    logger.info("Worker logging initialized (level=%s, file=%s)", settings.worker_log_level, log_path)
+    logger.info(
+        "Worker logging initialized (level=%s, file=%s)", settings.worker_log_level, log_path
+    )
 
 
 def set_path(obj: dict, path: str, value):

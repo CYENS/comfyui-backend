@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..models import RefreshToken, RoleName, User
+from ..limiter import limiter
+from ..models import RefreshToken, User
 from ..schemas import (
     AuthLoginRequest,
     AuthLogoutRequest,
@@ -20,7 +21,6 @@ from ..security import (
     issue_refresh_token_value,
     verify_password,
 )
-from ..limiter import limiter
 from ..services.auth import CurrentUser, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])

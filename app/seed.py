@@ -11,7 +11,6 @@ from .seeding import (
     seed_workflows,
 )
 
-
 DEFAULT_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 
 
@@ -41,9 +40,7 @@ def main() -> None:
     password = os.environ.get("USER_PASSWORD")
 
     if not username or not password:
-        raise SystemExit(
-            "Missing USER_NAME or USER_PASSWORD. Set them in env or in the env file."
-        )
+        raise SystemExit("Missing USER_NAME or USER_PASSWORD. Set them in env or in the env file.")
 
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()

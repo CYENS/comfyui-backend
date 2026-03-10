@@ -3,7 +3,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from .models import ExportStatus, JobStatus, ValidationStatus, AssetType
+from .models import AssetType, ExportStatus, JobStatus, ValidationStatus
 
 
 class WorkflowListOut(BaseModel):

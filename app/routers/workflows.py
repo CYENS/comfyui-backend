@@ -95,15 +95,17 @@ def _persist_requirements(db: Session, version_id: str, raw: list[dict]) -> None
             except ValueError:
                 logger.warning("Discarding invalid download URL for %s: %r", r["model_name"], url)
                 url = None
-        db.add(WorkflowModelRequirement(
-            id=str(uuid.uuid4()),
-            workflow_version_id=version_id,
-            model_name=r["model_name"],
-            folder=r["folder"],
-            model_type=r["model_type"],
-            download_url=url,
-            url_approved=False,
-        ))
+        db.add(
+            WorkflowModelRequirement(
+                id=str(uuid.uuid4()),
+                workflow_version_id=version_id,
+                model_name=r["model_name"],
+                folder=r["folder"],
+                model_type=r["model_type"],
+                download_url=url,
+                url_approved=False,
+            )
+        )
 
 
 @router.post("/parse", response_model=WorkflowParseResponse)
@@ -309,9 +311,7 @@ def update_workflow_inputs(
 ):
     return update_workflow(
         workflow_id,
-        WorkflowUpdate(
-            inputs_schema_json=payload.inputs_schema_json, change_note="inputs updated"
-        ),
+        WorkflowUpdate(inputs_schema_json=payload.inputs_schema_json, change_note="inputs updated"),
         db,
         user,
     )
@@ -385,17 +385,19 @@ async def get_workflow_requirements(
     out_list: list[ModelRequirementOut] = []
     for item in enriched:
         db_req = req_by_id[item["_id"]]
-        out_list.append(ModelRequirementOut(
-            id=db_req.id,
-            model_name=db_req.model_name,
-            folder=db_req.folder,
-            model_type=db_req.model_type,
-            download_url=db_req.download_url,
-            url_approved=db_req.url_approved,
-            approved_by_username=db_req.approved_by.username if db_req.approved_by else None,
-            approved_at=db_req.approved_at,
-            available=item["available"],
-        ))
+        out_list.append(
+            ModelRequirementOut(
+                id=db_req.id,
+                model_name=db_req.model_name,
+                folder=db_req.folder,
+                model_type=db_req.model_type,
+                download_url=db_req.download_url,
+                url_approved=db_req.url_approved,
+                approved_by_username=db_req.approved_by.username if db_req.approved_by else None,
+                approved_at=db_req.approved_at,
+                available=item["available"],
+            )
+        )
 
     missing = [r for r in out_list if not r.available]
     return WorkflowRequirementsResponse(
@@ -424,12 +426,18 @@ def update_requirement_url(
     if not is_admin:
         require_any_role(user, RoleName.WORKFLOW_CREATOR)
         if wf.created_by_user_id != user.id:
-            raise HTTPException(status_code=403, detail="Cannot edit requirements for workflows you do not own")
+            raise HTTPException(
+                status_code=403, detail="Cannot edit requirements for workflows you do not own"
+            )
 
-    req = db.query(WorkflowModelRequirement).filter(
-        WorkflowModelRequirement.id == req_id,
-        WorkflowModelRequirement.workflow_version_id == wf.current_version_id,
-    ).one_or_none()
+    req = (
+        db.query(WorkflowModelRequirement)
+        .filter(
+            WorkflowModelRequirement.id == req_id,
+            WorkflowModelRequirement.workflow_version_id == wf.current_version_id,
+        )
+        .one_or_none()
+    )
     if req is None:
         raise HTTPException(status_code=404, detail="Model requirement not found")
 

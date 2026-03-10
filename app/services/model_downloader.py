@@ -7,6 +7,7 @@ and model_name fields. A .tmp suffix is used during download and atomically
 renamed on completion to prevent partially-downloaded files from being seen
 by ComfyUI.
 """
+
 import logging
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-_CHUNK_SIZE = 1024 * 1024        # 1 MiB per read
+_CHUNK_SIZE = 1024 * 1024  # 1 MiB per read
 _PROGRESS_EVERY = 100 * 1024 * 1024  # log every 100 MiB
 
 
@@ -56,7 +57,11 @@ async def download_model(
         ) as client:
             async with client.stream("GET", download_url) as resp:
                 resp.raise_for_status()
-                total_bytes = int(resp.headers["content-length"]) if "content-length" in resp.headers else None
+                total_bytes = (
+                    int(resp.headers["content-length"])
+                    if "content-length" in resp.headers
+                    else None
+                )
                 if total_bytes:
                     logger.info("File size: %s", _fmt_mb(total_bytes))
                 else:

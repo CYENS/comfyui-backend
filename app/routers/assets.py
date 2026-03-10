@@ -46,9 +46,9 @@ def list_assets(
     # - mine=true  => all own assets (including pending/rejected)
     # - mine=false => approved assets from others + all own assets
     if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
-        q = q.outerjoin(
-            AssetValidationCurrent, AssetValidationCurrent.asset_id == Asset.id
-        ).join(Job, Job.id == Asset.job_id)
+        q = q.outerjoin(AssetValidationCurrent, AssetValidationCurrent.asset_id == Asset.id).join(
+            Job, Job.id == Asset.job_id
+        )
         if not mine:
             q = q.filter(
                 or_(

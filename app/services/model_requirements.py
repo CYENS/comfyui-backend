@@ -5,24 +5,25 @@ Supports both API-format (dict keyed by node ID) and UI-format (nodes array)
 workflow JSON. Extracted requirements can optionally include download URLs
 scraped from node properties in the UI format.
 """
+
 from urllib.parse import urlparse
 
 # Each entry: (field_name, folder, model_type, ui_widget_index)
 # ui_widget_index is the position of this field in widgets_values for UI-format JSON.
 MODEL_LOADER_FIELDS: dict[str, list[tuple[str, str, str, int]]] = {
-    "CheckpointLoaderSimple":    [("ckpt_name",         "checkpoints",      "checkpoint", 0)],
-    "CheckpointLoader":          [("ckpt_name",         "checkpoints",      "checkpoint", 0)],
-    "VAELoader":                 [("vae_name",           "vae",              "vae",        0)],
-    "CLIPLoader":                [("clip_name",          "text_encoders",    "clip",       0)],
-    "DualCLIPLoader":            [
+    "CheckpointLoaderSimple": [("ckpt_name", "checkpoints", "checkpoint", 0)],
+    "CheckpointLoader": [("ckpt_name", "checkpoints", "checkpoint", 0)],
+    "VAELoader": [("vae_name", "vae", "vae", 0)],
+    "CLIPLoader": [("clip_name", "text_encoders", "clip", 0)],
+    "DualCLIPLoader": [
         ("clip_name1", "text_encoders", "clip", 0),
         ("clip_name2", "text_encoders", "clip", 1),
     ],
-    "LoraLoader":                [("lora_name",          "loras",            "lora",       0)],
-    "LoraLoaderModelOnly":       [("lora_name",          "loras",            "lora",       0)],
-    "ControlNetLoader":          [("control_net_name",   "controlnet",       "controlnet", 0)],
-    "UNETLoader":                [("unet_name",          "diffusion_models", "unet",       0)],
-    "ImageOnlyCheckpointLoader": [("ckpt_name",          "checkpoints",      "checkpoint", 0)],
+    "LoraLoader": [("lora_name", "loras", "lora", 0)],
+    "LoraLoaderModelOnly": [("lora_name", "loras", "lora", 0)],
+    "ControlNetLoader": [("control_net_name", "controlnet", "controlnet", 0)],
+    "UNETLoader": [("unet_name", "diffusion_models", "unet", 0)],
+    "ImageOnlyCheckpointLoader": [("ckpt_name", "checkpoints", "checkpoint", 0)],
 }
 
 _ALLOWED_DOMAINS = {"civitai.com", "huggingface.co"}
@@ -73,15 +74,17 @@ def extract_from_api_json(prompt_json: dict) -> list[dict]:
             # Skip node-reference arrays like ["4", 0]
             if not isinstance(value, str) or not value:
                 continue
-            results.append({
-                "node_id": str(node_id),
-                "node_type": node_type,
-                "field": field_name,
-                "model_name": value,
-                "folder": folder,
-                "model_type": model_type,
-                "download_url": None,
-            })
+            results.append(
+                {
+                    "node_id": str(node_id),
+                    "node_type": node_type,
+                    "field": field_name,
+                    "model_name": value,
+                    "folder": folder,
+                    "model_type": model_type,
+                    "download_url": None,
+                }
+            )
     return results
 
 
@@ -139,15 +142,17 @@ def extract_from_ui_json(ui_json: dict) -> list[dict]:
                 key = (model_name, directory)
                 if key not in seen:
                     seen.add(key)
-                    results.append({
-                        "node_id": node_id,
-                        "node_type": node_type,
-                        "field": directory,
-                        "model_name": model_name,
-                        "folder": directory,
-                        "model_type": model_type,
-                        "download_url": download_url,
-                    })
+                    results.append(
+                        {
+                            "node_id": node_id,
+                            "node_type": node_type,
+                            "field": directory,
+                            "model_name": model_name,
+                            "folder": directory,
+                            "model_type": model_type,
+                            "download_url": download_url,
+                        }
+                    )
             continue  # don't also do widgets_values for this node
 
         # ── Priority 2: positional widgets_values (older workflow format) ───
@@ -161,15 +166,17 @@ def extract_from_ui_json(ui_json: dict) -> list[dict]:
             key = (value, folder)
             if key not in seen:
                 seen.add(key)
-                results.append({
-                    "node_id": node_id,
-                    "node_type": node_type,
-                    "field": field_name,
-                    "model_name": value,
-                    "folder": folder,
-                    "model_type": model_type,
-                    "download_url": None,
-                })
+                results.append(
+                    {
+                        "node_id": node_id,
+                        "node_type": node_type,
+                        "field": field_name,
+                        "model_name": value,
+                        "folder": folder,
+                        "model_type": model_type,
+                        "download_url": None,
+                    }
+                )
 
     return results
 

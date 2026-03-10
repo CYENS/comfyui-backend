@@ -8,8 +8,8 @@ Role requirements:
   POST /{req_id}/reject            — MODERATOR or ADMIN
   POST /{req_id}/download          — ADMIN only
 """
+
 import logging
-import uuid
 from datetime import UTC, datetime
 
 import httpx
@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/model-requirements", tags=["admin"])
 
 
-def _req_to_out(req: WorkflowModelRequirement, available: bool | None = None) -> ModelRequirementOut:
+def _req_to_out(
+    req: WorkflowModelRequirement, available: bool | None = None
+) -> ModelRequirementOut:
     return ModelRequirementOut(
         id=req.id,
         model_name=req.model_name,
@@ -182,7 +184,10 @@ async def _run_download(model_name: str, folder: str, download_url: str) -> None
     except httpx.HTTPStatusError as exc:
         logger.error(
             "Download failed for %s/%s (HTTP %s): %s",
-            folder, model_name, exc.response.status_code, exc,
+            folder,
+            model_name,
+            exc.response.status_code,
+            exc,
         )
     except Exception as exc:
         logger.error("Download failed for %s/%s: %s", folder, model_name, exc)

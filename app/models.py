@@ -82,7 +82,9 @@ class User(Base):
         DateTime, default=utcnow, onupdate=utcnow, nullable=False
     )
 
-    roles: Mapped[list["Role"]] = relationship("Role", secondary="user_roles", back_populates="users")
+    roles: Mapped[list["Role"]] = relationship(
+        "Role", secondary="user_roles", back_populates="users"
+    )
     jobs: Mapped[list["Job"]] = relationship("Job", back_populates="user")
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
@@ -101,7 +103,9 @@ class Role(Base):
     name: Mapped[RoleName] = mapped_column(Enum(RoleName), unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
-    users: Mapped[list["User"]] = relationship("User", secondary="user_roles", back_populates="roles")
+    users: Mapped[list["User"]] = relationship(
+        "User", secondary="user_roles", back_populates="roles"
+    )
 
 
 class Workflow(Base):
@@ -111,8 +115,12 @@ class Workflow(Base):
     key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_by_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
-    parent_workflow_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("workflows.id"), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False
+    )
+    parent_workflow_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("workflows.id"), nullable=True
+    )
     current_version_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("workflow_versions.id", ondelete="SET NULL"),
@@ -129,7 +137,9 @@ class Workflow(Base):
         back_populates="workflows_created",
         foreign_keys="Workflow.created_by_user_id",
     )
-    parent_workflow: Mapped[Optional["Workflow"]] = relationship("Workflow", remote_side="Workflow.id")
+    parent_workflow: Mapped[Optional["Workflow"]] = relationship(
+        "Workflow", remote_side="Workflow.id"
+    )
     versions: Mapped[list["WorkflowVersion"]] = relationship(
         "WorkflowVersion",
         back_populates="workflow",
@@ -139,15 +149,15 @@ class Workflow(Base):
     current_version: Mapped[Optional["WorkflowVersion"]] = relationship(
         "WorkflowVersion", foreign_keys="Workflow.current_version_id", post_update=True
     )
-    jobs: Mapped[list["Job"]] = relationship("Job", back_populates="workflow", cascade="all, delete-orphan")
+    jobs: Mapped[list["Job"]] = relationship(
+        "Job", back_populates="workflow", cascade="all, delete-orphan"
+    )
 
 
 class WorkflowVersion(Base):
     __tablename__ = "workflow_versions"
     __table_args__ = (
-        UniqueConstraint(
-            "workflow_id", "version_number", name="uq_workflow_version_num"
-        ),
+        UniqueConstraint("workflow_id", "version_number", name="uq_workflow_version_num"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -158,7 +168,9 @@ class WorkflowVersion(Base):
     prompt_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     inputs_schema_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     prompt_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    created_by_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False
+    )
     change_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
@@ -186,7 +198,9 @@ class Job(Base):
     workflow_version_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("workflow_versions.id"), nullable=False
     )
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), nullable=False, default=JobStatus.QUEUED)
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus), nullable=False, default=JobStatus.QUEUED
+    )
     start_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -198,11 +212,15 @@ class Job(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="jobs")
     workflow: Mapped["Workflow"] = relationship("Workflow", back_populates="jobs")
-    workflow_version: Mapped["WorkflowVersion"] = relationship("WorkflowVersion", back_populates="jobs")
+    workflow_version: Mapped["WorkflowVersion"] = relationship(
+        "WorkflowVersion", back_populates="jobs"
+    )
     input_values: Mapped[list["JobInputValue"]] = relationship(
         "JobInputValue", back_populates="job", cascade="all, delete-orphan"
     )
-    assets: Mapped[list["Asset"]] = relationship("Asset", back_populates="job", cascade="all, delete-orphan")
+    assets: Mapped[list["Asset"]] = relationship(
+        "Asset", back_populates="job", cascade="all, delete-orphan"
+    )
 
 
 class JobInputValue(Base):
@@ -266,7 +284,9 @@ class AssetValidation(Base):
     asset_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False
     )
-    moderator_user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    moderator_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True
+    )
     status: Mapped[ValidationStatus] = mapped_column(
         Enum(ValidationStatus), nullable=False, default=ValidationStatus.PENDING
     )
@@ -286,7 +306,9 @@ class AssetValidationCurrent(Base):
     status: Mapped[ValidationStatus] = mapped_column(
         Enum(ValidationStatus), nullable=False, default=ValidationStatus.PENDING
     )
-    moderator_user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id"), nullable=True)
+    moderator_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True
+    )
     validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
@@ -325,11 +347,15 @@ class WorkflowModelRequirement(Base):
     model_type: Mapped[str] = mapped_column(String(64), nullable=False)
     download_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     url_approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    approved_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_by_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
-    workflow_version: Mapped["WorkflowVersion"] = relationship("WorkflowVersion", back_populates="model_requirements")
+    workflow_version: Mapped["WorkflowVersion"] = relationship(
+        "WorkflowVersion", back_populates="model_requirements"
+    )
     approved_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by_user_id])
 
 
@@ -337,11 +363,15 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     user: Mapped["User"] = relationship("User", back_populates="refresh_tokens")

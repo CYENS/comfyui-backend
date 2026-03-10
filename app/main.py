@@ -8,19 +8,19 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
     datefmt="%H:%M:%S",
 )
-from fastapi.responses import HTMLResponse, RedirectResponse
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy.orm import Session
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.wsgi import WSGIMiddleware
+from fastapi.responses import HTMLResponse, RedirectResponse  # noqa: E402
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
+from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
+from starlette.middleware.wsgi import WSGIMiddleware  # noqa: E402
 
-from .db import Base, SessionLocal, engine
-from .flask_ui import app as flask_ui_app
-from .limiter import limiter
-from .routers import admin, assets, auth, export, jobs, review, ui, workflows
-from .seeding import seed_roles_and_system_user, seed_workflows
+from .db import Base, SessionLocal, engine  # noqa: E402
+from .flask_ui import app as flask_ui_app  # noqa: E402
+from .limiter import limiter  # noqa: E402
+from .routers import admin, assets, auth, export, jobs, review, ui, workflows  # noqa: E402
+from .seeding import seed_roles_and_system_user, seed_workflows  # noqa: E402
 
 
 @asynccontextmanager

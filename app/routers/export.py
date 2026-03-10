@@ -1,11 +1,13 @@
 import uuid
 from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from ..db import get_db
 from ..models import Asset, AssetExport, ExportStatus, RoleName
 from ..schemas import ExportOut
-from ..services.auth import get_current_user, CurrentUser, require_any_role
+from ..services.auth import CurrentUser, get_current_user, require_any_role
 
 router = APIRouter(prefix="/assets", tags=["export"])
 
@@ -27,9 +29,7 @@ def export_asset(
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    export = (
-        db.query(AssetExport).filter(AssetExport.asset_id == asset_id).one_or_none()
-    )
+    export = db.query(AssetExport).filter(AssetExport.asset_id == asset_id).one_or_none()
     if export is None:
         export = AssetExport(
             id=str(uuid.uuid4()),
