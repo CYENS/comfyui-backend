@@ -2,6 +2,7 @@ import hashlib
 import json
 import uuid
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -94,7 +95,7 @@ def seed_workflows(db: Session) -> None:
     if audio_prompt_path.exists():
         audio_prompt = json.loads(audio_prompt_path.read_text(encoding="utf-8"))
 
-    templates = [
+    templates: list[dict[str, Any]] = [
         {
             "key": "text_to_image",
             "name": "Text to Image",
