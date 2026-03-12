@@ -223,7 +223,6 @@ def workflows_crud():
         <th>ID</th>
         <th>Key</th>
         <th>Name</th>
-        <th>Active</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -280,7 +279,6 @@ async function refreshList() {
       <td>${wf.id}</td>
       <td>${wf.key}</td>
       <td>${wf.name}</td>
-      <td>${wf.is_active ?? true}</td>
       <td>
         <button onclick="loadWorkflow('${wf.id}')">Edit</button>
       </td>

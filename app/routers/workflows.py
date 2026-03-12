@@ -144,7 +144,6 @@ def create_workflow(
         name=payload.name,
         description=payload.description,
         created_by_user_id=user.id,
-        is_active=True,
     )
     db.add(wf)
     db.flush()
@@ -198,8 +197,6 @@ def update_workflow(
         wf.name = payload.name
     if payload.description is not None:
         wf.description = payload.description
-    if payload.is_active is not None:
-        wf.is_active = payload.is_active
 
     if payload.prompt_json is not None or payload.inputs_schema_json is not None:
         current = (
@@ -271,7 +268,6 @@ def duplicate_workflow(
         description=payload.description,
         created_by_user_id=user.id,
         parent_workflow_id=source.id,
-        is_active=True,
     )
     db.add(wf)
     db.flush()

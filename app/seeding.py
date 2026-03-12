@@ -163,7 +163,6 @@ def seed_workflows(db: Session) -> None:
                 name=template["name"],
                 description=template["description"],
                 created_by_user_id="system-seed",
-                is_active=True,
             )
             db.add(wf)
             db.flush()

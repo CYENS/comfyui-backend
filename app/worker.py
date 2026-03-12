@@ -65,19 +65,6 @@ def set_path(obj: dict, path: str, value):
     cur[parts[-1]] = value
 
 
-def slugify_filename(text: str) -> str:
-    out = []
-    for ch in text.lower():
-        if ("a" <= ch <= "z") or ("0" <= ch <= "9"):
-            out.append(ch)
-        else:
-            out.append("_")
-    slug = "".join(out).strip("_")
-    while "__" in slug:
-        slug = slug.replace("__", "_")
-    return slug[:80]
-
-
 def _job_base_dir(job_id: str) -> Path:
     return Path(settings.storage_root) / "jobs" / job_id
 
@@ -212,10 +199,6 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
     for definition in version.inputs_schema_json or []:
         input_id = definition.get("id")
         value = values.get(input_id, definition.get("default"))
-        if input_id == "filename_prefix" and input_id not in values:
-            # Generate deterministic filename prefix from text-like field
-            base = str(values.get("text", "audio"))
-            value = f"audio/{slugify_filename(base) or 'audio'}"
         if value is None:
             continue
 

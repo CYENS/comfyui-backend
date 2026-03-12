@@ -13,7 +13,6 @@ class WorkflowListOut(BaseModel):
     description: str | None = None
     created_by_user_id: str
     current_version_id: str | None = None
-    is_active: bool
     created_at: datetime
     updated_at: datetime
 
@@ -79,7 +78,6 @@ class WorkflowUpdate(BaseModel):
     prompt_json: dict[str, Any] | None = None
     inputs_schema_json: list[dict[str, Any]] | None = None
     change_note: str | None = None
-    is_active: bool | None = None
     ui_json: dict[str, Any] | None = None  # not persisted; used only for model URL extraction
 
 
