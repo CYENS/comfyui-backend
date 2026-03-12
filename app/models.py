@@ -45,6 +45,7 @@ class AssetType(str, enum.Enum):
     AUDIO = "AUDIO"
     VIDEO = "VIDEO"
     MODEL = "MODEL"
+    MESH = "MESH"
     OTHER = "OTHER"
 
 
@@ -251,6 +252,7 @@ class Asset(Base):
         String(36), ForeignKey("workflow_versions.id"), nullable=False
     )
     type: Mapped[AssetType] = mapped_column(Enum(AssetType), nullable=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     original_filename: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)

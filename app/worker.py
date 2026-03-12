@@ -98,6 +98,8 @@ def _infer_asset_type(
         return AssetType.IMAGE
     if ext in {".ckpt", ".safetensors", ".onnx", ".pth"}:
         return AssetType.MODEL
+    if "3d" in key or ext in {".glb", ".gltf", ".obj", ".ply", ".fbx", ".bvh"}:
+        return AssetType.MESH
     return AssetType.OTHER
 
 

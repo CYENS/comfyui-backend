@@ -464,7 +464,7 @@ def ui_assets():
   <h1>Assets</h1>
   <table>
     <thead>
-      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Status</th><th>Validated</th><th>Download</th></tr>
+      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Status</th><th>Validated</th><th>Public</th><th>Download</th><th>Link</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
@@ -472,6 +472,7 @@ def ui_assets():
   <script src="/ui/shared.js"></script>
   <script>
     let isModerator = false;
+    let isAdmin = false;
 
     async function loadMe() {
       const res = await authFetch('/api/auth/me');
@@ -479,6 +480,7 @@ def ui_assets():
       const me = await res.json();
       const roles = me.roles || [];
       isModerator = roles.includes('moderator') || roles.includes('admin');
+      isAdmin = roles.includes('admin');
     }
 
     async function downloadAsset(assetId) {
@@ -487,11 +489,14 @@ def ui_assets():
         alert(`Download failed: ${res.status}`);
         return;
       }
+      const disposition = res.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const filename = (match && match[1]) || assetId;
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = assetId;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -516,10 +521,29 @@ def ui_assets():
       await loadAssets();
     }
 
+    async function setPublic(assetId, checked) {
+      if (!isAdmin) return;
+      const res = await fetch(`/api/assets/${assetId}/visibility`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ is_public: checked }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to update visibility: ${res.status} ${err.detail || ''}`);
+        await loadAssets();
+      }
+    }
+
     async function loadAssets() {
       const res = await fetch('/api/assets?mine=false', { headers: authHeaders() });
-      const data = await res.json();
       const rows = document.getElementById('rows');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        rows.innerHTML = `<tr><td colspan="8" style="color:red">Error ${res.status}: ${err.detail || JSON.stringify(err)}</td></tr>`;
+        return;
+      }
+      const data = await res.json();
       rows.innerHTML = '';
       data.forEach(asset => {
         const isApproved = asset.validation_status === 'APPROVED';
@@ -533,18 +557,35 @@ def ui_assets():
           <td>
             <input type="checkbox" data-validate-id="${asset.id}" ${isApproved ? 'checked' : ''} ${isModerator ? '' : 'disabled'} />
           </td>
+          <td>
+            <input type="checkbox" data-public-id="${asset.id}" ${asset.is_public ? 'checked' : ''} ${isAdmin ? '' : 'disabled'} />
+          </td>
           <td><button data-download-id="${asset.id}">Download</button></td>
+          <td><button data-copy-id="${asset.id}">Copy link</button></td>
         `;
         rows.appendChild(tr);
       });
       rows.querySelectorAll('[data-download-id]').forEach((el) => {
         el.addEventListener('click', () => downloadAsset(el.dataset.downloadId));
       });
+      rows.querySelectorAll('[data-copy-id]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const url = `${location.origin}/api/assets/${el.dataset.copyId}/download`;
+          navigator.clipboard.writeText(url).then(() => {
+            const orig = el.textContent;
+            el.textContent = 'Copied!';
+            setTimeout(() => { el.textContent = orig; }, 1500);
+          });
+        });
+      });
       rows.querySelectorAll('[data-validate-id]').forEach((el) => {
         el.addEventListener('change', () => setValidation(el.dataset.validateId, el.checked));
       });
+      rows.querySelectorAll('[data-public-id]').forEach((el) => {
+        el.addEventListener('change', () => setPublic(el.dataset.publicId, el.checked));
+      });
     }
-    loadMe().then(loadAssets);
+    loadMe().finally(loadAssets);
   </script>
 </body>
 </html>

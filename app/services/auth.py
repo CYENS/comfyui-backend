@@ -96,6 +96,26 @@ async def get_current_user(
     return _token_user(parts[1], db)
 
 
+async def get_optional_user(
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_user_id: Annotated[str | None, Header()] = None,
+    x_user_roles: Annotated[str | None, Header()] = None,
+) -> CurrentUser | None:
+    """Like get_current_user but returns None instead of 401 when unauthenticated."""
+    if not authorization:
+        if settings.auth_dev_mode:
+            return _dev_override_user(x_user_id=x_user_id, x_user_roles=x_user_roles)
+        return None
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    try:
+        return _token_user(parts[1], db)
+    except HTTPException:
+        return None
+
+
 def require_any_role(user: CurrentUser, *roles: RoleName) -> None:
     if user.has(RoleName.ADMIN):
         return

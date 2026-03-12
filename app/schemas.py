@@ -132,11 +132,25 @@ class AssetOut(BaseModel):
     workflow_id: str
     workflow_version_id: str
     type: AssetType
+    is_public: bool = False
     file_path: str
     size_bytes: int
     checksum_sha256: str
     media_type: Optional[str]
     validation_status: ValidationStatus | None = None
+
+
+class AssetVisibilityUpdate(BaseModel):
+    is_public: bool
+
+
+class PublicAssetOut(BaseModel):
+    id: str
+    workflow_id: str
+    type: AssetType
+    size_bytes: int
+    media_type: Optional[str]
+    download_url: str
 
 
 class ValidationUpdate(BaseModel):

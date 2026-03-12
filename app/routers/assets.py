@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
@@ -5,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Asset, AssetValidationCurrent, Job, RoleName, ValidationStatus
-from ..schemas import AssetOut
-from ..services.auth import CurrentUser, get_current_user
+from ..schemas import AssetOut, AssetVisibilityUpdate
+from ..services.auth import CurrentUser, get_current_user, require_any_role
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -19,6 +21,7 @@ def _asset_to_out(asset: Asset) -> AssetOut:
         workflow_id=asset.workflow_id,
         workflow_version_id=asset.workflow_version_id,
         type=asset.type,
+        is_public=asset.is_public,
         file_path=asset.file_path,
         size_bytes=asset.size_bytes,
         checksum_sha256=asset.checksum_sha256,
@@ -102,9 +105,29 @@ def download_asset(
         if not is_owner and not is_approved:
             raise HTTPException(status_code=403, detail="Forbidden")
 
-    download_name = asset.original_filename or f"{asset.id}.bin"
+    disk_path = Path(asset.file_path)
+    download_name = asset.original_filename or disk_path.name
+    if not Path(download_name).suffix:
+        download_name += disk_path.suffix or ".bin"
     return FileResponse(
         path=asset.file_path,
         media_type=asset.media_type or "application/octet-stream",
         filename=download_name,
     )
+
+
+@router.patch("/{asset_id}/visibility", response_model=AssetOut)
+def set_asset_visibility(
+    asset_id: str,
+    payload: AssetVisibilityUpdate,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    require_any_role(user, RoleName.ADMIN)
+    asset = db.query(Asset).filter(Asset.id == asset_id).one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    asset.is_public = payload.is_public
+    db.commit()
+    db.refresh(asset)
+    return _asset_to_out(asset)
