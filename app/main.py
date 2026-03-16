@@ -19,7 +19,18 @@ from starlette.middleware.wsgi import WSGIMiddleware  # noqa: E402
 from .db import Base, SessionLocal, engine  # noqa: E402
 from .flask_ui import app as flask_ui_app  # noqa: E402
 from .limiter import limiter  # noqa: E402
-from .routers import admin, assets, auth, export, jobs, public, review, ui, workflows  # noqa: E402
+from .routers import (  # noqa: E402
+    admin,
+    assets,
+    auth,
+    export,
+    health,
+    jobs,
+    public,
+    review,
+    ui,
+    workflows,
+)
 from .seeding import seed_roles_and_system_user, seed_workflows  # noqa: E402
 
 
@@ -64,6 +75,7 @@ app.include_router(review.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
+app.include_router(health.router, prefix="/api")
 app.include_router(ui.router)
 app.mount("/ui/builder", WSGIMiddleware(flask_ui_app))
 

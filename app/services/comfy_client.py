@@ -83,5 +83,13 @@ class ComfyClient:
             enriched.append({**req, "available": available})
         return enriched
 
+    async def health(self) -> bool:
+        """Return True if ComfyUI is reachable and responsive."""
+        try:
+            resp = await self.client.get("/system_stats", timeout=5.0)
+            return resp.status_code == 200
+        except httpx.HTTPError:
+            return False
+
     async def close(self):
         await self.client.aclose()
