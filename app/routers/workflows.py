@@ -56,6 +56,8 @@ def _parse_prompt_candidates(prompt: dict) -> list[dict]:
                 value_type = "boolean"
             elif isinstance(value, (int, float)):
                 value_type = "number"
+            elif isinstance(value, str) and key == "image":
+                value_type = "image"
             elif isinstance(value, str):
                 value_type = "string"
             else:

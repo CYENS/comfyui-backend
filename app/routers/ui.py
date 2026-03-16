@@ -261,6 +261,10 @@ def ui_workflows():
           field = document.createElement('input');
           field.type = 'checkbox';
           field.checked = Boolean(input.default);
+        } else if (input.type?.toLowerCase() === 'image' || /[._]image$/i.test(input.id) || /[._]image$/i.test(input.label)) {
+          field = document.createElement('input');
+          field.type = 'file';
+          field.accept = 'image/*';
         } else {
           field = document.createElement('textarea');
           field.value = input.default ?? '';
@@ -311,14 +315,35 @@ def ui_workflows():
       if (!currentWorkflow || !currentVersion) return;
       const inputs = currentVersion.inputs_schema_json || [];
       const params = {};
-      inputs.forEach(input => {
+
+      for (const input of inputs) {
         const el = document.getElementById(`input_${input.id}`);
-        if (!el) return;
-        let value = el.value;
-        if (input.type === 'number') value = Number(el.value);
-        if (input.type === 'boolean') value = Boolean(el.checked);
-        params[input.id] = value;
-      });
+        if (!el) continue;
+
+        if (input.type?.toLowerCase() === 'image' || /[._]image$/i.test(input.id) || /[._]image$/i.test(input.label)) {
+          const file = el.files && el.files[0];
+          if (file) {
+            const form = new FormData();
+            form.append('file', file);
+            const up = await authFetch('/api/jobs/upload-image', { method: 'POST', body: form });
+            if (!up.ok) {
+              const err = await up.json().catch(() => ({}));
+              alert(`Image upload failed: ${err.detail || up.status}`);
+              return;
+            }
+            params[input.id] = (await up.json()).name;
+          } else if (input.required) {
+            alert(`${input.label || input.id} is required`);
+            return;
+          }
+        } else if (input.type === 'number') {
+          params[input.id] = Number(el.value);
+        } else if (input.type === 'boolean') {
+          params[input.id] = Boolean(el.checked);
+        } else {
+          params[input.id] = el.value;
+        }
+      }
 
       const res = await authFetch('/api/jobs', {
         method: 'POST',

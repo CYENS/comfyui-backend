@@ -83,6 +83,13 @@ class ComfyClient:
             enriched.append({**req, "available": available})
         return enriched
 
+    async def upload_image(self, content: bytes, filename: str, content_type: str) -> str:
+        """Upload an image to ComfyUI and return the stored filename."""
+        files = {"image": (filename, content, content_type)}
+        resp = await self.client.post("/upload/image", files=files, timeout=30.0)
+        resp.raise_for_status()
+        return resp.json()["name"]
+
     async def health(self) -> bool:
         """Return True if ComfyUI is reachable and responsive."""
         try:

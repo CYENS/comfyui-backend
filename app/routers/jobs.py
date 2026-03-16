@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
@@ -30,6 +30,23 @@ def _job_to_out(job: Job) -> JobOut:
             {"input_id": item.input_id, "value_json": item.value_json} for item in job.input_values
         ],
     )
+
+
+@router.post("/upload-image")
+async def upload_image(
+    file: UploadFile,
+    user: CurrentUser = Depends(get_current_user),
+):
+    require_any_role(user, RoleName.JOB_CREATOR)
+    content = await file.read()
+    try:
+        async with ComfyClient() as client:
+            name = await client.upload_image(
+                content, file.filename or "upload.png", file.content_type or "image/png"
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        raise HTTPException(status_code=503, detail="ComfyUI is unreachable")
+    return {"name": name}
 
 
 @router.post("", response_model=JobOut)

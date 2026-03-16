@@ -201,7 +201,7 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
     for definition in version.inputs_schema_json or []:
         input_id = definition.get("id")
         value = values.get(input_id, definition.get("default"))
-        if value is None:
+        if value is None or value == "":
             continue
 
         for mapping in definition.get("mapping", []):
