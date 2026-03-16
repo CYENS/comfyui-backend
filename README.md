@@ -47,6 +47,7 @@ uv run python -m app.worker
 
 ## Notes
 - JWT auth is enabled (`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/me`).
+- Access token lifetime is controlled by `AUTH_ACCESS_TOKEN_TTL_MINUTES` in `backend/.env` (default `60`).
 - Development override is available via `AUTH_DEV_MODE=true` for faster local iteration.
 - Seeder command reads `USER_NAME` and `USER_PASSWORD` from `.env` (or environment variables).
 - Optional headers:

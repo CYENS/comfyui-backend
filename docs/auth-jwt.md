@@ -34,7 +34,7 @@ Access token claims:
 ## Config (`backend/.env`)
 - `AUTH_JWT_SECRET`
 - `AUTH_JWT_ALGORITHM` (default `HS256`)
-- `AUTH_ACCESS_TOKEN_TTL_MINUTES` (default `15`)
+- `AUTH_ACCESS_TOKEN_TTL_MINUTES` (default `60`)
 - `AUTH_REFRESH_TOKEN_TTL_DAYS` (default `14`)
 - `AUTH_ISSUER`
 - `AUTH_DEV_MODE` (`true`/`false`)

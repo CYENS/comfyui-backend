@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     worker_log_level: str = "INFO"
     auth_jwt_secret: str = "change-me-in-production"
     auth_jwt_algorithm: str = "HS256"
-    auth_access_token_ttl_minutes: int = 15
+    auth_access_token_ttl_minutes: int = 60
     auth_refresh_token_ttl_days: int = 14
     auth_issuer: str = "comfyui-wrapper-backend"
     auth_dev_mode: bool = True
