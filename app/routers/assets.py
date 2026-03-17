@@ -50,6 +50,7 @@ def _asset_to_out(asset: Asset) -> AssetOut:
 def list_assets(
     mine: bool = True,
     workflow_id: str | None = None,
+    job_id: str | None = None,
     user_id: str | None = None,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
@@ -58,6 +59,9 @@ def list_assets(
 
     if workflow_id:
         q = q.filter(Asset.workflow_id == workflow_id)
+
+    if job_id:
+        q = q.filter(Asset.job_id == job_id)
 
     if user_id:
         # Filter by specific user via subquery to avoid join conflicts
