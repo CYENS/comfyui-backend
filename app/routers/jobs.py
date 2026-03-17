@@ -75,7 +75,6 @@ async def upload_image(
 @router.get("/input-image/{filename}")
 async def get_input_image(
     filename: str,
-    user: CurrentUser = Depends(get_current_user),
 ):
     # Basic path safety: reject traversal attempts
     if "/" in filename or "\\" in filename or ".." in filename:
