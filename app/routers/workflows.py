@@ -78,10 +78,19 @@ def _extract_requirements(
     prompt_json: dict,
     ui_json: dict | None,
 ) -> list[dict]:
-    """Return extracted requirements, preferring ui_json when available."""
+    """Return extracted requirements, preferring ui_json when available.
+
+    Fallback: if ui_json is absent but prompt_json looks like a UI-format
+    workflow (has a top-level ``nodes`` list instead of class_type-keyed
+    nodes), try UI-format extraction on prompt_json.  This handles the common
+    mistake of pasting the UI export into the API-format field.
+    """
     if ui_json is not None:
         return extract_from_ui_json(ui_json)
-    return extract_from_api_json(prompt_json)
+    results = extract_from_api_json(prompt_json)
+    if not results and isinstance(prompt_json.get("nodes"), list):
+        return extract_from_ui_json(prompt_json)
+    return results
 
 
 def _can_view_workflow_graph(user: CurrentUser, workflow: Workflow) -> bool:
