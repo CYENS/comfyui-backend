@@ -346,6 +346,9 @@ class WorkflowModelRequirement(Base):
     model_type: Mapped[str] = mapped_column(String(64), nullable=False)
     download_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     url_approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    download_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    download_progress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    download_error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     approved_by_user_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

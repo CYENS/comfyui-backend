@@ -49,6 +49,9 @@ class ModelRequirementOut(BaseModel):
     approved_by_username: str | None = None
     approved_at: datetime | None
     available: bool | None = None
+    download_status: str | None = None
+    download_progress: int | None = None
+    download_error: str | None = None
 
     model_config = {"from_attributes": True}
 

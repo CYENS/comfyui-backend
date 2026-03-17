@@ -462,6 +462,9 @@ async def get_workflow_requirements(
                 approved_by_username=db_req.approved_by.username if db_req.approved_by else None,
                 approved_at=db_req.approved_at,
                 available=item["available"],
+                download_status=db_req.download_status,
+                download_progress=db_req.download_progress,
+                download_error=db_req.download_error,
             )
         )
 
@@ -529,4 +532,7 @@ def update_requirement_url(
         approved_by_username=None,
         approved_at=None,
         available=None,
+        download_status=req.download_status,
+        download_progress=req.download_progress,
+        download_error=req.download_error,
     )

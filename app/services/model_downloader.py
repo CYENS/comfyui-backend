@@ -9,7 +9,9 @@ by ComfyUI.
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -30,6 +32,7 @@ async def download_model(
     folder: str,
     download_url: str,
     models_dir: str | None = None,
+    progress_callback: Callable[[int], None] | None = None,
 ) -> Path:
     """
     Stream-download a model file from ``download_url`` into
@@ -69,6 +72,7 @@ async def download_model(
 
                 received = 0
                 last_logged = 0
+                last_pct = -1
                 with open(tmp_path, "wb") as fh:
                     async for chunk in resp.aiter_bytes(_CHUNK_SIZE):
                         fh.write(chunk)
@@ -84,6 +88,11 @@ async def download_model(
                             else:
                                 logger.info("  %s received", _fmt_mb(received))
                             last_logged = received
+                        if progress_callback and total_bytes:
+                            pct = int(received / total_bytes * 100)
+                            if pct - last_pct >= 5:
+                                last_pct = pct
+                                progress_callback(pct)
 
         tmp_path.rename(dest_path)
         logger.info(
@@ -97,3 +106,57 @@ async def download_model(
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
         raise
+
+
+async def run_download(
+    req_id: str,
+    url: str,
+    folder: str,
+    model_name: str,
+    session_factory: Any,
+) -> None:
+    """
+    Background task wrapper: opens its own DB session, updates download_status/
+    download_progress/download_error on the WorkflowModelRequirement row as the
+    download proceeds.
+    """
+    from ..models import WorkflowModelRequirement  # local import to avoid circular
+
+    db = session_factory()
+    last_reported: list[int] = [-1]
+    try:
+        req = db.query(WorkflowModelRequirement).filter_by(id=req_id).one_or_none()
+        if req:
+            req.download_status = "downloading"
+            db.commit()
+
+        def on_progress(pct: int) -> None:
+            if pct - last_reported[0] >= 5:
+                last_reported[0] = pct
+                r = db.query(WorkflowModelRequirement).filter_by(id=req_id).one_or_none()
+                if r:
+                    r.download_progress = pct
+                    db.commit()
+
+        await download_model(
+            download_url=url,
+            folder=folder,
+            model_name=model_name,
+            progress_callback=on_progress,
+        )
+
+        r = db.query(WorkflowModelRequirement).filter_by(id=req_id).one_or_none()
+        if r:
+            r.download_status = "completed"
+            r.download_progress = 100
+            db.commit()
+    except Exception as exc:
+        r = db.query(WorkflowModelRequirement).filter_by(id=req_id).one_or_none()
+        if r:
+            r.download_status = "failed"
+            r.download_error = str(exc)
+            db.commit()
+        logger.error("Download failed for req %s (%s/%s): %s", req_id, folder, model_name, exc)
+        raise
+    finally:
+        db.close()

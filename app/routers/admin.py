@@ -12,15 +12,14 @@ Role requirements:
 import logging
 from datetime import UTC, datetime
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..models import RoleName, Workflow, WorkflowModelRequirement, WorkflowVersion
 from ..schemas import ModelRequirementOut
 from ..services.auth import CurrentUser, get_current_user, require_any_role
-from ..services.model_downloader import download_model
+from ..services.model_downloader import run_download
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +39,9 @@ def _req_to_out(
         approved_by_username=req.approved_by.username if req.approved_by else None,
         approved_at=req.approved_at,
         available=available,
+        download_status=req.download_status,
+        download_progress=req.download_progress,
+        download_error=req.download_error,
     )
 
 
@@ -92,6 +94,9 @@ def list_pending_requirements(
             approved_by_username=req.approved_by.username if req.approved_by else None,
             approved_at=req.approved_at,
             available=None,
+            download_status=req.download_status,
+            download_progress=req.download_progress,
+            download_error=req.download_error,
             workflow_id=wf.id,
             workflow_key=wf.key,
             workflow_name=wf.name,
@@ -164,11 +169,18 @@ async def trigger_download(
     if not req.url_approved:
         raise HTTPException(status_code=422, detail="Download URL has not been approved yet")
 
+    req.download_status = "pending"
+    req.download_progress = 0
+    req.download_error = None
+    db.commit()
+
     background_tasks.add_task(
-        _run_download,
-        model_name=req.model_name,
+        run_download,
+        req_id=req.id,
+        url=req.download_url,
         folder=req.folder,
-        download_url=req.download_url,
+        model_name=req.model_name,
+        session_factory=SessionLocal,
     )
 
     return {
@@ -176,18 +188,3 @@ async def trigger_download(
         "model_name": req.model_name,
         "folder": req.folder,
     }
-
-
-async def _run_download(model_name: str, folder: str, download_url: str) -> None:
-    try:
-        await download_model(model_name=model_name, folder=folder, download_url=download_url)
-    except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Download failed for %s/%s (HTTP %s): %s",
-            folder,
-            model_name,
-            exc.response.status_code,
-            exc,
-        )
-    except Exception as exc:
-        logger.error("Download failed for %s/%s: %s", folder, model_name, exc)
