@@ -55,6 +55,22 @@ def configure_logging() -> None:
     )
 
 
+def _format_comfy_error(status: dict) -> str:
+    err = status.get("execution_error")
+    if isinstance(err, dict):
+        node_type = err.get("node_type") or err.get("node_id") or "unknown node"
+        msg = err.get("exception_message") or err.get("exception_type") or "unknown error"
+        traceback = err.get("traceback")
+        result = f"{node_type}: {msg}"
+        if traceback:
+            tb_text = "".join(traceback) if isinstance(traceback, list) else str(traceback)
+            result = f"{result}\n\n{tb_text.strip()}"
+        return result
+    if isinstance(err, str) and err:
+        return err
+    return status.get("execution_status", {}).get("status_str") or "ComfyUI job failed"
+
+
 def set_path(obj: dict, path: str, value):
     cur = obj
     parts = path.split(".")
@@ -351,11 +367,7 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
                 logger.warning("Job id=%s was cancelled by ComfyUI", job.id)
             else:
                 job.status = JobStatus.FAILED
-                job.error_message = job.error_message or (
-                    status.get("execution_error")
-                    or status.get("execution_status", {}).get("status_str")
-                    or "ComfyUI job failed"
-                )
+                job.error_message = job.error_message or _format_comfy_error(status)
                 logger.error("Job id=%s failed in ComfyUI: %s", job.id, job.error_message)
             db.add(job)
             db.commit()
