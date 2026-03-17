@@ -29,6 +29,7 @@ from .routers import (  # noqa: E402
     public,
     review,
     ui,
+    users,
     workflows,
 )
 from .seeding import seed_roles_and_system_user, seed_workflows  # noqa: E402
@@ -76,6 +77,7 @@ app.include_router(export.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(public.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
 app.include_router(ui.router)
 app.mount("/ui/builder", WSGIMiddleware(flask_ui_app))
 

@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from ..db import get_db
 from ..models import Asset, AssetValidationCurrent, Job, RoleName, ValidationStatus
@@ -13,7 +13,16 @@ from ..services.auth import CurrentUser, get_current_user, require_any_role
 router = APIRouter(prefix="/assets", tags=["assets"])
 
 
+_ASSET_LOADS = [
+    joinedload(Asset.validation_current),
+    selectinload(Asset.job).selectinload(Job.user),
+    selectinload(Asset.job).selectinload(Job.workflow),
+    selectinload(Asset.job).selectinload(Job.workflow_version),
+]
+
+
 def _asset_to_out(asset: Asset) -> AssetOut:
+    job = asset.job
     status = asset.validation_current.status if asset.validation_current else None
     return AssetOut(
         id=asset.id,
@@ -27,6 +36,13 @@ def _asset_to_out(asset: Asset) -> AssetOut:
         checksum_sha256=asset.checksum_sha256,
         media_type=asset.media_type,
         validation_status=status,
+        created_at=asset.created_at,
+        author=job.user.username if job and job.user else None,
+        workflow_name=job.workflow.name if job and job.workflow else None,
+        workflow_version=job.workflow_version.version_number
+        if job and job.workflow_version
+        else None,
+        job_submitted_at=job.submitted_at if job else None,
     )
 
 
@@ -34,29 +50,34 @@ def _asset_to_out(asset: Asset) -> AssetOut:
 def list_assets(
     mine: bool = True,
     workflow_id: str | None = None,
+    user_id: str | None = None,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    q = db.query(Asset)
+    q = db.query(Asset).options(*_ASSET_LOADS)
 
     if workflow_id:
         q = q.filter(Asset.workflow_id == workflow_id)
 
-    if mine and not user.has(RoleName.ADMIN):
-        q = q.join(Job).filter(Job.user_id == user.id)
+    if user_id:
+        # Filter by specific user via subquery to avoid join conflicts
+        q = q.filter(Asset.job_id.in_(db.query(Job.id).filter(Job.user_id == user_id)))
+    elif mine and not user.has(RoleName.ADMIN):
+        q = q.filter(Asset.job_id.in_(db.query(Job.id).filter(Job.user_id == user.id)))
 
     # Non-moderator/admin visibility:
-    # - mine=true  => all own assets (including pending/rejected)
-    # - mine=false => approved assets from others + all own assets
+    # - mine=true (no user_id)  => all own assets (including pending/rejected)
+    # - mine=false OR user_id   => approved assets from others + all own assets
     if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
-        q = q.outerjoin(AssetValidationCurrent, AssetValidationCurrent.asset_id == Asset.id).join(
-            Job, Job.id == Asset.job_id
-        )
-        if not mine:
+        if user_id or not mine:
+            own_job_ids = db.query(Job.id).filter(Job.user_id == user.id)
+            approved_asset_ids = db.query(AssetValidationCurrent.asset_id).filter(
+                AssetValidationCurrent.status == ValidationStatus.APPROVED
+            )
             q = q.filter(
                 or_(
-                    Job.user_id == user.id,
-                    AssetValidationCurrent.status == ValidationStatus.APPROVED,
+                    Asset.job_id.in_(own_job_ids),
+                    Asset.id.in_(approved_asset_ids),
                 )
             )
 
@@ -70,7 +91,7 @@ def get_asset(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    asset = db.query(Asset).filter(Asset.id == asset_id).one_or_none()
+    asset = db.query(Asset).options(*_ASSET_LOADS).filter(Asset.id == asset_id).one_or_none()
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
 
@@ -124,10 +145,38 @@ def set_asset_visibility(
     user: CurrentUser = Depends(get_current_user),
 ):
     require_any_role(user, RoleName.ADMIN)
-    asset = db.query(Asset).filter(Asset.id == asset_id).one_or_none()
+    asset = db.query(Asset).options(*_ASSET_LOADS).filter(Asset.id == asset_id).one_or_none()
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     asset.is_public = payload.is_public
     db.commit()
     db.refresh(asset)
     return _asset_to_out(asset)
+
+
+@router.delete("/{asset_id}")
+def delete_asset(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    asset = db.query(Asset).filter(Asset.id == asset_id).one_or_none()
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    is_owner = asset.job is not None and asset.job.user_id == user.id
+    if not user.has(RoleName.ADMIN) and not is_owner:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    disk_path = Path(asset.file_path)
+    db.delete(asset)
+    db.commit()
+
+    try:
+        if disk_path.exists():
+            disk_path.unlink()
+    except Exception:
+        # Deleting the DB record is the primary action; file cleanup is best-effort.
+        pass
+
+    return {"status": "deleted"}
