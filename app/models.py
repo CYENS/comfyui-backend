@@ -256,6 +256,7 @@ class Asset(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     media_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     job: Mapped["Job"] = relationship("Job", back_populates="assets")

@@ -77,6 +77,17 @@ def _safe_ext(filename: str, media_type: str | None) -> str:
     return guessed or ".bin"
 
 
+_MESH_EXTENSIONS = {".glb", ".gltf", ".obj", ".ply", ".fbx", ".bvh"}
+
+
+def _mesh_base_filename(filename: str) -> str | None:
+    """If filename is a mesh thumbnail (e.g. 'foo.glb.png'), return 'foo.glb'. Otherwise None."""
+    for ext in _MESH_EXTENSIONS:
+        if filename.endswith(ext + ".png"):
+            return filename[: -len(".png")]
+    return None
+
+
 def _infer_asset_type(
     output_key: str,
     filename: str,
@@ -122,8 +133,9 @@ async def _ingest_job_outputs(
     output_dir = _job_base_dir(job.id) / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    ingested = 0
+    # Collect unique output items, preserving output_key for type inference
     seen: set[tuple[str, str, str]] = set()
+    all_items: list[tuple[str, str, str, str]] = []  # (output_key, filename, subfolder, file_type)
     for node_output in outputs.values():
         if not isinstance(node_output, dict):
             continue
@@ -142,44 +154,105 @@ async def _ingest_job_outputs(
                 if marker in seen:
                     continue
                 seen.add(marker)
+                all_items.append((output_key, filename, subfolder, file_type))
 
-                payload, content_type = await client.download_view(
-                    filename=filename,
-                    subfolder=subfolder,
-                    type_=file_type,
-                )
+    # Split into thumbnails (mesh_name.ext.png) and regular outputs
+    thumbnail_items = [(ok, fn, sf, ft) for ok, fn, sf, ft in all_items if _mesh_base_filename(fn)]
+    regular_items = [
+        (ok, fn, sf, ft) for ok, fn, sf, ft in all_items if not _mesh_base_filename(fn)
+    ]
 
-                asset_id = str(uuid.uuid4())
-                ext = _safe_ext(filename, content_type)
-                disk_path = output_dir / f"{asset_id}{ext}"
-                disk_path.write_bytes(payload)
+    # Pass 1: ingest regular outputs; track mesh original_filename → asset
+    mesh_assets: dict[str, Asset] = {}
+    ingested = 0
+    for output_key, filename, subfolder, file_type in regular_items:
+        payload, content_type = await client.download_view(
+            filename=filename,
+            subfolder=subfolder,
+            type_=file_type,
+        )
 
-                checksum = hashlib.sha256(payload).hexdigest()
-                asset_type = _infer_asset_type(output_key, filename, content_type)
+        asset_id = str(uuid.uuid4())
+        ext = _safe_ext(filename, content_type)
+        disk_path = output_dir / f"{asset_id}{ext}"
+        disk_path.write_bytes(payload)
 
-                asset = Asset(
+        checksum = hashlib.sha256(payload).hexdigest()
+        asset_type = _infer_asset_type(output_key, filename, content_type)
+
+        asset = Asset(
+            id=asset_id,
+            job_id=job.id,
+            workflow_id=job.workflow_id,
+            workflow_version_id=job.workflow_version_id,
+            type=asset_type,
+            file_path=str(disk_path),
+            original_filename=filename,
+            size_bytes=len(payload),
+            checksum_sha256=checksum,
+            media_type=content_type,
+        )
+        db.add(asset)
+        db.add(
+            AssetValidationCurrent(
+                asset_id=asset_id,
+                status=ValidationStatus.PENDING,
+                moderator_user_id=None,
+                validated_at=None,
+                notes=None,
+            )
+        )
+        if asset_type == AssetType.MESH:
+            mesh_assets[filename] = asset
+        ingested += 1
+
+    # Pass 2: download thumbnails and attach to their parent mesh assets
+    for output_key, filename, subfolder, file_type in thumbnail_items:
+        mesh_filename = _mesh_base_filename(filename)
+        parent = mesh_assets.get(mesh_filename) if mesh_filename else None
+        if parent is None:
+            # No matching mesh found — ingest as a regular asset so nothing is lost
+            logger.warning("Thumbnail %s has no matching mesh asset; ingesting as IMAGE", filename)
+            payload, content_type = await client.download_view(
+                filename=filename, subfolder=subfolder, type_=file_type
+            )
+            asset_id = str(uuid.uuid4())
+            disk_path = output_dir / f"{asset_id}.png"
+            disk_path.write_bytes(payload)
+            db.add(
+                Asset(
                     id=asset_id,
                     job_id=job.id,
                     workflow_id=job.workflow_id,
                     workflow_version_id=job.workflow_version_id,
-                    type=asset_type,
+                    type=AssetType.IMAGE,
                     file_path=str(disk_path),
                     original_filename=filename,
                     size_bytes=len(payload),
-                    checksum_sha256=checksum,
+                    checksum_sha256=hashlib.sha256(payload).hexdigest(),
                     media_type=content_type,
                 )
-                db.add(asset)
-                db.add(
-                    AssetValidationCurrent(
-                        asset_id=asset_id,
-                        status=ValidationStatus.PENDING,
-                        moderator_user_id=None,
-                        validated_at=None,
-                        notes=None,
-                    )
+            )
+            db.add(
+                AssetValidationCurrent(
+                    asset_id=asset_id,
+                    status=ValidationStatus.PENDING,
+                    moderator_user_id=None,
+                    validated_at=None,
+                    notes=None,
                 )
-                ingested += 1
+            )
+            ingested += 1
+            continue
+
+        payload, content_type = await client.download_view(
+            filename=filename, subfolder=subfolder, type_=file_type
+        )
+        thumb_path = output_dir / f"{parent.id}_thumb.png"
+        thumb_path.write_bytes(payload)
+        parent.thumbnail_path = str(thumb_path)
+        db.add(parent)
+        logger.debug("Attached thumbnail %s to mesh asset %s", filename, parent.id)
 
     db.commit()
     return ingested

@@ -138,9 +138,11 @@ class AssetOut(BaseModel):
     type: AssetType
     is_public: bool = False
     file_path: str
+    filename: str | None = None
     size_bytes: int
     checksum_sha256: str
     media_type: Optional[str]
+    thumbnail_url: str | None = None
     validation_status: ValidationStatus | None = None
     created_at: datetime | None = None
     # Provenance join fields

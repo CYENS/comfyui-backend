@@ -32,9 +32,11 @@ def _asset_to_out(asset: Asset) -> AssetOut:
         type=asset.type,
         is_public=asset.is_public,
         file_path=asset.file_path,
+        filename=asset.original_filename,
         size_bytes=asset.size_bytes,
         checksum_sha256=asset.checksum_sha256,
         media_type=asset.media_type,
+        thumbnail_url=f"/api/assets/{asset.id}/thumbnail" if asset.thumbnail_path else None,
         validation_status=status,
         created_at=asset.created_at,
         author=job.user.username if job and job.user else None,
@@ -139,6 +141,28 @@ def download_asset(
         media_type=asset.media_type or "application/octet-stream",
         filename=download_name,
     )
+
+
+@router.get("/{asset_id}/thumbnail")
+def get_asset_thumbnail(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    asset = db.query(Asset).filter(Asset.id == asset_id).one_or_none()
+    if asset is None or not asset.thumbnail_path:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+    if not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
+        is_owner = asset.job is not None and asset.job.user_id == user.id
+        is_approved = (
+            asset.validation_current is not None
+            and asset.validation_current.status == ValidationStatus.APPROVED
+        )
+        if not is_owner and not is_approved:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    return FileResponse(path=asset.thumbnail_path, media_type="image/png")
 
 
 @router.patch("/{asset_id}/visibility", response_model=AssetOut)
