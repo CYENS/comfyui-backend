@@ -295,7 +295,7 @@ def ui_workflows():
           <td>${wf.name || ''}</td>
           <td>${wf.key || ''}</td>
           <td>${wf.current_version_id ? 'v' + ((wf.versions_count || '') || '') : '-'}</td>
-          <td>${wf.created_by_user_id || ''}</td>
+          <td>${wf.author_id || ''}</td>
         `;
         tr.addEventListener('click', () => loadWorkflowDetail(wf.id));
         tbody.appendChild(tr);
@@ -429,22 +429,37 @@ def ui_jobs():
     body { font-family: Arial, sans-serif; margin: 24px; }
     .crumbs { margin-bottom: 12px; }
     .crumbs a { text-decoration: none; color: #0a58ca; }
+    .topbar { margin-bottom: 12px; display: flex; gap: 8px; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    button { margin-right: 6px; }
+    pre { background: #f7f7f7; padding: 12px; border: 1px solid #ddd; margin-top: 12px; }
   </style>
 </head>
 <body>
   <div class="crumbs"><a href="/ui">Home</a> / <a href="/ui/jobs">Jobs</a></div>
   <h1>Jobs</h1>
+  <div class="topbar">
+    <button id="refreshBtn">Refresh</button>
+  </div>
   <table>
     <thead>
-      <tr><th>ID</th><th>Status</th><th>Workflow</th><th>Submitted</th></tr>
+      <tr><th>ID</th><th>Status</th><th>Workflow</th><th>Submitted</th><th>Actions</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
+  <pre id="result"></pre>
 
   <script src="/ui/shared.js"></script>
   <script>
+    async function cancelJob(jobId) {
+      if (!confirm(`Cancel job ${jobId}?`)) return;
+      const res = await authFetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      await loadJobs();
+    }
+
     async function loadJobs() {
       const res = await authFetch('/api/jobs');
       const data = await res.json();
@@ -457,10 +472,15 @@ def ui_jobs():
           <td>${job.status}</td>
           <td>${job.workflow_id}</td>
           <td>${job.submitted_at}</td>
+          <td><button data-cancel-id="${job.id}">Cancel</button></td>
         `;
         rows.appendChild(tr);
       });
+      rows.querySelectorAll('[data-cancel-id]').forEach((el) => {
+        el.addEventListener('click', () => cancelJob(el.dataset.cancelId));
+      });
     }
+    document.getElementById('refreshBtn').addEventListener('click', loadJobs);
     loadJobs();
   </script>
 </body>
@@ -480,19 +500,25 @@ def ui_assets():
     body { font-family: Arial, sans-serif; margin: 24px; }
     .crumbs { margin-bottom: 12px; }
     .crumbs a { text-decoration: none; color: #0a58ca; }
+    .topbar { margin-bottom: 12px; display: flex; gap: 8px; }
     table { border-collapse: collapse; width: 100%; }
     th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    pre { background: #f7f7f7; padding: 12px; border: 1px solid #ddd; margin-top: 12px; }
   </style>
 </head>
 <body>
   <div class="crumbs"><a href="/ui">Home</a> / <a href="/ui/assets">Assets</a></div>
   <h1>Assets</h1>
+  <div class="topbar">
+    <button id="refreshBtn">Refresh</button>
+  </div>
   <table>
     <thead>
-      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Status</th><th>Validated</th><th>Public</th><th>Download</th><th>Link</th></tr>
+      <tr><th>ID</th><th>Job</th><th>Type</th><th>Size</th><th>Status</th><th>Validated</th><th>Public</th><th>Download</th><th>Link</th><th>Delete</th></tr>
     </thead>
     <tbody id="rows"></tbody>
   </table>
+  <pre id="result"></pre>
 
   <script src="/ui/shared.js"></script>
   <script>
@@ -560,6 +586,17 @@ def ui_assets():
       }
     }
 
+    async function deleteAsset(assetId) {
+      if (!confirm(`Delete asset ${assetId}?`)) return;
+      const res = await authFetch(`/api/assets/${assetId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      if (!res.ok) {
+        alert(`Delete failed: ${res.status} ${data.detail || ''}`);
+      }
+      await loadAssets();
+    }
+
     async function loadAssets() {
       const res = await fetch('/api/assets?mine=false', { headers: authHeaders() });
       const rows = document.getElementById('rows');
@@ -587,6 +624,7 @@ def ui_assets():
           </td>
           <td><button data-download-id="${asset.id}">Download</button></td>
           <td><button data-copy-id="${asset.id}">Copy link</button></td>
+          <td><button data-delete-id="${asset.id}">Delete</button></td>
         `;
         rows.appendChild(tr);
       });
@@ -609,7 +647,11 @@ def ui_assets():
       rows.querySelectorAll('[data-public-id]').forEach((el) => {
         el.addEventListener('change', () => setPublic(el.dataset.publicId, el.checked));
       });
+      rows.querySelectorAll('[data-delete-id]').forEach((el) => {
+        el.addEventListener('click', () => deleteAsset(el.dataset.deleteId));
+      });
     }
+    document.getElementById('refreshBtn').addEventListener('click', loadAssets);
     loadMe().finally(loadAssets);
   </script>
 </body>

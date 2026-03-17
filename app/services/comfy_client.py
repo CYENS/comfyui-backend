@@ -27,6 +27,10 @@ class ComfyClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def interrupt_prompt(self, prompt_id: str) -> None:
+        resp = await self.client.post("/api/interrupt", json={"prompt_id": prompt_id})
+        resp.raise_for_status()
+
     async def download_view(
         self, filename: str, subfolder: str | None = None, type_: str = "output"
     ) -> tuple[bytes, str | None]:

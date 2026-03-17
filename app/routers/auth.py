@@ -21,7 +21,7 @@ from ..security import (
     issue_refresh_token_value,
     verify_password,
 )
-from ..services.auth import CurrentUser, get_current_user
+from ..services.auth import CurrentUser, _parse_roles_csv, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -127,5 +127,7 @@ def dev_status():
     return {
         "auth_dev_mode": settings.auth_dev_mode,
         "default_user_id": settings.auth_dev_user_id if settings.auth_dev_mode else None,
-        "default_roles": settings.auth_dev_user_roles if settings.auth_dev_mode else None,
+        "default_roles": sorted(r.value for r in _parse_roles_csv(settings.auth_dev_user_roles))
+        if settings.auth_dev_mode
+        else None,
     }

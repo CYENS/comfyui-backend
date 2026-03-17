@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from .config import settings
 from .models import Role, RoleName, User, UserRole, Workflow, WorkflowVersion
 from .security import hash_password
 
@@ -36,6 +37,14 @@ def seed_roles_and_system_user(db: Session) -> None:
         system = User(id="system-seed", username="system-seed", password_hash="!disabled")
         db.add(system)
         db.flush()
+
+    # Dev override user — created so that job/asset provenance resolves in dev mode.
+    if settings.auth_dev_mode:
+        dev_id = settings.auth_dev_user_id
+        dev_user = db.query(User).filter(User.id == dev_id).one_or_none()
+        if dev_user is None:
+            db.add(User(id=dev_id, username=dev_id, password_hash="!disabled"))
+            db.flush()
 
     workflow_creator_role = role_map[RoleName.WORKFLOW_CREATOR]
     exists = (
@@ -162,7 +171,7 @@ def seed_workflows(db: Session) -> None:
                 key=template["key"],
                 name=template["name"],
                 description=template["description"],
-                created_by_user_id="system-seed",
+                author_id="system-seed",
             )
             db.add(wf)
             db.flush()

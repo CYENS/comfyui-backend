@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     auth_access_token_ttl_minutes: int = 60
     auth_refresh_token_ttl_days: int = 14
     auth_issuer: str = "comfyui-wrapper-backend"
-    auth_dev_mode: bool = True
+    auth_dev_mode: bool = False
     auth_dev_user_id: str = "dev-admin"
     auth_dev_user_roles: str = "admin"
     comfy_models_dir: str = "/app/models"

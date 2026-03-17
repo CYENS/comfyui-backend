@@ -92,8 +92,8 @@ class User(Base):
     )
     workflows_created: Mapped[list["Workflow"]] = relationship(
         "Workflow",
-        back_populates="created_by",
-        foreign_keys="Workflow.created_by_user_id",
+        back_populates="author",
+        foreign_keys="Workflow.author_id",
     )
 
 
@@ -116,9 +116,7 @@ class Workflow(Base):
     key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_by_user_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("users.id"), nullable=False
-    )
+    author_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     parent_workflow_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("workflows.id"), nullable=True
     )
@@ -132,10 +130,10 @@ class Workflow(Base):
         DateTime, default=utcnow, onupdate=utcnow, nullable=False
     )
 
-    created_by: Mapped["User"] = relationship(
+    author: Mapped["User"] = relationship(
         "User",
         back_populates="workflows_created",
-        foreign_keys="Workflow.created_by_user_id",
+        foreign_keys="Workflow.author_id",
     )
     parent_workflow: Mapped[Optional["Workflow"]] = relationship(
         "Workflow", remote_side="Workflow.id"

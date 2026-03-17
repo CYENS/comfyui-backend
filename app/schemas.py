@@ -11,7 +11,8 @@ class WorkflowListOut(BaseModel):
     key: str
     name: str
     description: str | None = None
-    created_by_user_id: str
+    author_id: str
+    author: str | None = None
     current_version_id: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -23,7 +24,7 @@ class WorkflowVersionOut(BaseModel):
     id: str
     workflow_id: str
     version_number: int
-    prompt_json: dict[str, Any]
+    prompt_json: dict[str, Any] | None = None
     inputs_schema_json: list[dict[str, Any]] | None = None
     prompt_hash: str
     created_by_user_id: str
@@ -138,6 +139,12 @@ class AssetOut(BaseModel):
     checksum_sha256: str
     media_type: Optional[str]
     validation_status: ValidationStatus | None = None
+    created_at: datetime | None = None
+    # Provenance join fields
+    author: str | None = None
+    workflow_name: str | None = None
+    workflow_version: int | None = None
+    job_submitted_at: datetime | None = None
 
 
 class AssetVisibilityUpdate(BaseModel):

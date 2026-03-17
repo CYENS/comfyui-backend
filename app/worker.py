@@ -234,6 +234,7 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
     logger.info("Job id=%s submitted to ComfyUI as prompt_id=%s", job.id, job.comfy_job_id)
 
     while True:
+        db.refresh(job)
         status = await client.get_job(job.comfy_job_id)
         status_str = status.get("status")
 
@@ -247,26 +248,37 @@ async def process_job(db: Session, job: Job, client: ComfyClient):
         if status_str in ("completed", "failed", "cancelled"):
             job.end_time = datetime.now(UTC)
             if status_str == "completed":
-                try:
-                    ingested_count = await _ingest_job_outputs(db, job, status, client)
-                    job.status = JobStatus.GENERATED
-                    job.error_message = None
-                    logger.info(
-                        "Job id=%s completed successfully, ingested_assets=%s",
-                        job.id,
-                        ingested_count,
-                    )
-                except Exception as exc:
+                if job.status == JobStatus.CANCELLED:
                     job.status = JobStatus.FAILED
-                    job.error_message = f"Output ingestion failed: {exc}"
-                    logger.exception("Job id=%s failed during output ingestion", job.id)
+                    job.error_message = (
+                        job.error_message
+                        or "Cancellation requested by user, but ComfyUI completed first"
+                    )
+                    logger.warning(
+                        "Job id=%s completed after cancellation request; outputs ignored",
+                        job.id,
+                    )
+                else:
+                    try:
+                        ingested_count = await _ingest_job_outputs(db, job, status, client)
+                        job.status = JobStatus.GENERATED
+                        job.error_message = None
+                        logger.info(
+                            "Job id=%s completed successfully, ingested_assets=%s",
+                            job.id,
+                            ingested_count,
+                        )
+                    except Exception as exc:
+                        job.status = JobStatus.FAILED
+                        job.error_message = f"Output ingestion failed: {exc}"
+                        logger.exception("Job id=%s failed during output ingestion", job.id)
             elif status_str == "cancelled":
-                job.status = JobStatus.CANCELLED
-                job.error_message = None
+                job.status = JobStatus.FAILED
+                job.error_message = job.error_message or "Cancelled by user"
                 logger.warning("Job id=%s was cancelled by ComfyUI", job.id)
             else:
                 job.status = JobStatus.FAILED
-                job.error_message = (
+                job.error_message = job.error_message or (
                     status.get("execution_error")
                     or status.get("execution_status", {}).get("status_str")
                     or "ComfyUI job failed"

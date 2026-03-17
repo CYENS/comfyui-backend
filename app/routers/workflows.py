@@ -5,7 +5,7 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..db import get_db
 from ..models import Asset, Job, RoleName, Workflow, WorkflowModelRequirement, WorkflowVersion
@@ -16,11 +16,11 @@ from ..schemas import (
     WorkflowDetailOut,
     WorkflowDuplicateRequest,
     WorkflowInputsUpdate,
-    WorkflowListOut,
     WorkflowParseRequest,
     WorkflowParseResponse,
     WorkflowRequirementsResponse,
     WorkflowUpdate,
+    WorkflowVersionOut,
 )
 from ..services.auth import CurrentUser, get_current_user, require_any_role
 from ..services.comfy_client import ComfyClient
@@ -84,6 +84,48 @@ def _extract_requirements(
     return extract_from_api_json(prompt_json)
 
 
+def _can_view_workflow_graph(user: CurrentUser, workflow: Workflow) -> bool:
+    return user.has(RoleName.ADMIN) or workflow.author_id == user.id
+
+
+def _workflow_to_detail_out(workflow: Workflow, user: CurrentUser) -> WorkflowDetailOut:
+    show_full_graph = _can_view_workflow_graph(user, workflow)
+
+    if show_full_graph:
+        versions = [WorkflowVersionOut.model_validate(v) for v in workflow.versions]
+    else:
+        current_version = workflow.current_version
+        versions = []
+        if current_version is not None:
+            versions.append(
+                WorkflowVersionOut(
+                    id=current_version.id,
+                    workflow_id=current_version.workflow_id,
+                    version_number=current_version.version_number,
+                    prompt_json=None,
+                    inputs_schema_json=current_version.inputs_schema_json,
+                    prompt_hash=current_version.prompt_hash,
+                    created_by_user_id=current_version.created_by_user_id,
+                    change_note=current_version.change_note,
+                    is_published=current_version.is_published,
+                    created_at=current_version.created_at,
+                )
+            )
+
+    return WorkflowDetailOut(
+        id=workflow.id,
+        key=workflow.key,
+        name=workflow.name,
+        description=workflow.description,
+        author_id=workflow.author_id,
+        author=workflow.author.username if workflow.author else None,
+        current_version_id=workflow.current_version_id,
+        created_at=workflow.created_at,
+        updated_at=workflow.updated_at,
+        versions=versions,
+    )
+
+
 def _persist_requirements(db: Session, version_id: str, raw: list[dict]) -> None:
     """Delete old requirements for this version and insert new ones."""
     db.query(WorkflowModelRequirement).filter(
@@ -115,17 +157,34 @@ def parse_prompt(payload: WorkflowParseRequest):
     return {"candidate_inputs": _parse_prompt_candidates(payload.prompt_json)}
 
 
-@router.get("", response_model=list[WorkflowListOut])
-def list_workflows(db: Session = Depends(get_db)):
-    return db.query(Workflow).order_by(Workflow.created_at.desc()).all()
+@router.get("", response_model=list[WorkflowDetailOut])
+def list_workflows(
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    workflows = (
+        db.query(Workflow)
+        .options(
+            joinedload(Workflow.author),
+            joinedload(Workflow.current_version),
+            joinedload(Workflow.versions),
+        )
+        .order_by(Workflow.created_at.desc())
+        .all()
+    )
+    return [_workflow_to_detail_out(wf, user) for wf in workflows]
 
 
 @router.get("/{workflow_id}", response_model=WorkflowDetailOut)
-def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
+def get_workflow(
+    workflow_id: str,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).one_or_none()
     if wf is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    return wf
+    return _workflow_to_detail_out(wf, user)
 
 
 @router.post("", response_model=WorkflowDetailOut)
@@ -145,7 +204,7 @@ def create_workflow(
         key=payload.key,
         name=payload.name,
         description=payload.description,
-        created_by_user_id=user.id,
+        author_id=user.id,
     )
     db.add(wf)
     db.flush()
@@ -173,7 +232,7 @@ def create_workflow(
 
     db.commit()
     db.refresh(wf)
-    return wf
+    return _workflow_to_detail_out(wf, user)
 
 
 @router.patch("/{workflow_id}", response_model=WorkflowDetailOut)
@@ -190,7 +249,7 @@ def update_workflow(
     is_admin = user.has(RoleName.ADMIN)
     if not is_admin:
         require_any_role(user, RoleName.WORKFLOW_CREATOR)
-        if wf.created_by_user_id != user.id:
+        if wf.author_id != user.id:
             raise HTTPException(
                 status_code=403, detail="Cannot edit workflows owned by other users"
             )
@@ -243,7 +302,7 @@ def update_workflow(
     db.add(wf)
     db.commit()
     db.refresh(wf)
-    return wf
+    return _workflow_to_detail_out(wf, user)
 
 
 @router.post("/{workflow_id}/duplicate", response_model=WorkflowDetailOut)
@@ -268,7 +327,7 @@ def duplicate_workflow(
         key=payload.key,
         name=payload.name,
         description=payload.description,
-        created_by_user_id=user.id,
+        author_id=user.id,
         parent_workflow_id=source.id,
     )
     db.add(wf)
@@ -297,7 +356,7 @@ def duplicate_workflow(
     db.add(wf)
     db.commit()
     db.refresh(wf)
-    return wf
+    return _workflow_to_detail_out(wf, user)
 
 
 @router.put("/{workflow_id}/inputs", response_model=WorkflowDetailOut)
@@ -328,7 +387,7 @@ def delete_workflow(
     is_admin = user.has(RoleName.ADMIN)
     if not is_admin:
         require_any_role(user, RoleName.WORKFLOW_CREATOR)
-        if wf.created_by_user_id != user.id:
+        if wf.author_id != user.id:
             raise HTTPException(
                 status_code=403, detail="Cannot delete workflows owned by other users"
             )
@@ -423,7 +482,7 @@ def update_requirement_url(
     is_admin = user.has(RoleName.ADMIN)
     if not is_admin:
         require_any_role(user, RoleName.WORKFLOW_CREATOR)
-        if wf.created_by_user_id != user.id:
+        if wf.author_id != user.id:
             raise HTTPException(
                 status_code=403, detail="Cannot edit requirements for workflows you do not own"
             )

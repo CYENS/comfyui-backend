@@ -146,7 +146,10 @@ def list_jobs(
     user: CurrentUser = Depends(get_current_user),
 ):
     q = db.query(Job).options(joinedload(Job.input_values))
-    if mine and not user.has(RoleName.ADMIN):
+    if not mine and not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
+        raise HTTPException(status_code=403, detail="Only moderators and admins can list all jobs")
+
+    if mine or (not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR)):
         q = q.filter(Job.user_id == user.id)
     if status is not None:
         q = q.filter(Job.status == status)
@@ -169,7 +172,7 @@ def get_job(
 
 
 @router.post("/{job_id}/cancel")
-def cancel_job(
+async def cancel_job(
     job_id: str,
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
@@ -183,7 +186,24 @@ def cancel_job(
     if job.status in (JobStatus.GENERATED, JobStatus.FAILED, JobStatus.CANCELLED):
         return {"status": job.status}
 
+    actor = "admin" if user.has(RoleName.ADMIN) and job.user_id != user.id else "user"
+
+    if job.status == JobStatus.QUEUED or not job.comfy_job_id:
+        job.status = JobStatus.FAILED
+        job.end_time = datetime.now(UTC)
+        job.error_message = f"Cancelled by {actor} before execution"
+        db.add(job)
+        db.commit()
+        return {"status": job.status, "reason": job.error_message}
+
+    try:
+        async with ComfyClient() as client:
+            await client.interrupt_prompt(job.comfy_job_id)
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        raise HTTPException(status_code=503, detail="ComfyUI is unreachable")
+
     job.status = JobStatus.CANCELLED
+    job.error_message = f"Cancellation requested by {actor}"
     db.add(job)
     db.commit()
-    return {"status": job.status}
+    return {"status": "cancellation_requested", "reason": job.error_message}
