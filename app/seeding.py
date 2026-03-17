@@ -7,8 +7,17 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import Role, RoleName, User, UserRole, Workflow, WorkflowVersion
+from .models import (
+    Role,
+    RoleName,
+    User,
+    UserRole,
+    Workflow,
+    WorkflowModelRequirement,
+    WorkflowVersion,
+)
 from .security import hash_password
+from .services.model_requirements import extract_from_api_json, extract_from_ui_json
 
 
 def _hash_prompt(prompt: dict) -> str:
@@ -97,28 +106,108 @@ def seed_user_with_roles(
     return user
 
 
+def _load_json(path: Path) -> dict:
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {}
+
+
+def _persist_requirements(db: Session, version_id: str, raw: list[dict]) -> None:
+    db.query(WorkflowModelRequirement).filter(
+        WorkflowModelRequirement.workflow_version_id == version_id
+    ).delete()
+    for r in raw:
+        db.add(
+            WorkflowModelRequirement(
+                id=str(uuid.uuid4()),
+                workflow_version_id=version_id,
+                model_name=r["model_name"],
+                folder=r["folder"],
+                model_type=r["model_type"],
+                download_url=r.get("download_url"),
+                url_approved=False,
+            )
+        )
+
+
 def seed_workflows(db: Session) -> None:
+    seed_dir = Path(__file__).resolve().parents[1] / "seed" / "prompts"
     repo_root = Path(__file__).resolve().parents[2]
-    audio_prompt_path = repo_root / "prompts" / "audio_stable_audio_example.json"
-    audio_prompt = {}
-    if audio_prompt_path.exists():
-        audio_prompt = json.loads(audio_prompt_path.read_text(encoding="utf-8"))
+
+    # Legacy audio prompt (kept for backwards compat)
+    audio_prompt = _load_json(repo_root / "prompts" / "audio_stable_audio_example.json")
+
+    # New seeded workflows loaded from seed/prompts/
+    flux2_api = _load_json(seed_dir / "image_flux2_klein_text_to_image-api.json")
+    flux2_ui = _load_json(seed_dir / "image_flux2_klein_text_to_image-ui.json")
+    trellis_api = _load_json(seed_dir / "simple-image-to-3d-trellis-api.json")
+    trellis_ui = _load_json(seed_dir / "simple-image-to-3d-trellis-ui.json")
 
     templates: list[dict[str, Any]] = [
         {
-            "key": "text_to_image",
-            "name": "Text to Image",
-            "description": "Seeded text to image workflow",
-            "prompt_json": {},
+            "key": "flux2_klein_text_to_image",
+            "name": "Flux 2 Klein — Text to Image",
+            "description": "Generate images from a text prompt using the Flux 2 Klein 4B model.",
+            "prompt_json": flux2_api,
+            "ui_json": flux2_ui,
             "inputs_schema_json": [
                 {
-                    "id": "text",
+                    "id": "prompt",
                     "label": "Prompt",
                     "type": "string",
                     "required": True,
                     "default": "",
-                    "mapping": [{"node_id": "17", "path": "inputs.text"}],
-                }
+                    "mapping": [{"node_id": "76", "path": "inputs.value"}],
+                },
+                {
+                    "id": "width",
+                    "label": "Width",
+                    "type": "number",
+                    "required": False,
+                    "default": 1024,
+                    "mapping": [{"node_id": "75:68", "path": "inputs.value"}],
+                },
+                {
+                    "id": "height",
+                    "label": "Height",
+                    "type": "number",
+                    "required": False,
+                    "default": 1024,
+                    "mapping": [{"node_id": "75:69", "path": "inputs.value"}],
+                },
+                {
+                    "id": "seed",
+                    "label": "Seed",
+                    "type": "number",
+                    "required": False,
+                    "default": 0,
+                    "mapping": [{"node_id": "75:73", "path": "inputs.noise_seed"}],
+                },
+            ],
+        },
+        {
+            "key": "simple_image_to_3d_trellis",
+            "name": "Simple Image to 3D (Trellis)",
+            "description": "Convert a single image into a 3D mesh using the Trellis 2 pipeline.",
+            "prompt_json": trellis_api,
+            "ui_json": trellis_ui,
+            "inputs_schema_json": [
+                {
+                    "id": "image",
+                    "label": "Input Image",
+                    "type": "image",
+                    "required": True,
+                    "default": None,
+                    "mapping": [{"node_id": "6", "path": "inputs.image"}],
+                },
+                {
+                    "id": "seed",
+                    "label": "Seed",
+                    "type": "number",
+                    "required": False,
+                    "default": 0,
+                    "mapping": [{"node_id": "41", "path": "inputs.seed"}],
+                },
             ],
         },
         {
@@ -126,6 +215,7 @@ def seed_workflows(db: Session) -> None:
             "name": "Text to Audio",
             "description": "Seeded text to audio workflow",
             "prompt_json": audio_prompt,
+            "ui_json": None,
             "inputs_schema_json": [
                 {
                     "id": "text",
@@ -191,5 +281,13 @@ def seed_workflows(db: Session) -> None:
             db.flush()
             wf.current_version_id = version.id
             db.add(wf)
+
+            # Extract and persist model requirements
+            ui_json = template.get("ui_json")
+            if ui_json:
+                raw_reqs = extract_from_ui_json(ui_json)
+            else:
+                raw_reqs = extract_from_api_json(template["prompt_json"])
+            _persist_requirements(db, version.id, raw_reqs)
 
     db.commit()
