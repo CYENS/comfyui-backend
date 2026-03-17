@@ -120,14 +120,19 @@ class JobOut(BaseModel):
     id: str
     comfy_job_id: Optional[str]
     user_id: str
+    username: str | None = None
     workflow_id: str
     workflow_version_id: str
+    workflow_name: str | None = None
+    workflow_key: str | None = None
+    version_number: int | None = None
     status: JobStatus
     start_time: Optional[datetime]
     end_time: Optional[datetime]
     error_message: Optional[str]
     submitted_at: datetime
-    inputs: list[JobInputOut]
+    input_values: list[JobInputOut]
+    inputs_schema: list[dict[str, Any]] | None = None
 
 
 class AssetOut(BaseModel):

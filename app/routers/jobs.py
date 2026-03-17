@@ -1,10 +1,13 @@
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy.orm import Session, joinedload
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session, joinedload, selectinload
 
+from ..config import settings
 from ..db import get_db
 from ..models import Job, JobInputValue, JobStatus, RoleName, Workflow, WorkflowVersion
 from ..schemas import JobCreate, JobOut
@@ -13,22 +16,36 @@ from ..services.comfy_client import ComfyClient
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
+_JOB_LOADS = [
+    joinedload(Job.input_values),
+    selectinload(Job.user),
+    selectinload(Job.workflow),
+    selectinload(Job.workflow_version),
+]
+
 
 def _job_to_out(job: Job) -> JobOut:
+    wf = job.workflow
+    wv = job.workflow_version
     return JobOut(
         id=job.id,
         comfy_job_id=job.comfy_job_id,
         user_id=job.user_id,
+        username=job.user.username if job.user else None,
         workflow_id=job.workflow_id,
         workflow_version_id=job.workflow_version_id,
+        workflow_name=wf.name if wf else None,
+        workflow_key=wf.key if wf else None,
+        version_number=wv.version_number if wv else None,
         status=job.status,
         start_time=job.start_time,
         end_time=job.end_time,
         error_message=job.error_message,
         submitted_at=job.submitted_at,
-        inputs=[
+        input_values=[
             {"input_id": item.input_id, "value_json": item.value_json} for item in job.input_values
         ],
+        inputs_schema=wv.inputs_schema_json if wv else None,
     )
 
 
@@ -46,7 +63,52 @@ async def upload_image(
             )
     except (httpx.ConnectError, httpx.ConnectTimeout):
         raise HTTPException(status_code=503, detail="ComfyUI is unreachable")
+
+    # Save a local copy so we can display it for job traceability
+    upload_dir = Path(settings.storage_root) / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / name).write_bytes(content)
+
     return {"name": name}
+
+
+@router.get("/input-image/{filename}")
+async def get_input_image(
+    filename: str,
+    user: CurrentUser = Depends(get_current_user),
+):
+    # Basic path safety: reject traversal attempts
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Serve from local copy if it exists
+    path = Path(settings.storage_root) / "uploads" / filename
+    if path.exists():
+        suffix = path.suffix.lower()
+        media_type = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }.get(suffix, "image/png")
+        return FileResponse(path=str(path), media_type=media_type)
+
+    # Fall back to proxying from ComfyUI's input folder
+    try:
+        async with ComfyClient() as client:
+            payload, content_type = await client.download_view(filename=filename, type_="input")
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        raise HTTPException(status_code=503, detail="ComfyUI is unreachable")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Input image not found")
+        raise HTTPException(status_code=502, detail="ComfyUI error")
+
+    # Cache locally for next time
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return FileResponse(path=str(path), media_type=content_type or "image/png")
 
 
 @router.post("", response_model=JobOut)
@@ -133,8 +195,7 @@ async def create_job(
         )
 
     db.commit()
-    db.refresh(job)
-    job = db.query(Job).options(joinedload(Job.input_values)).filter(Job.id == job.id).one()
+    job = db.query(Job).options(*_JOB_LOADS).filter(Job.id == job.id).one()
     return _job_to_out(job)
 
 
@@ -145,7 +206,7 @@ def list_jobs(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    q = db.query(Job).options(joinedload(Job.input_values))
+    q = db.query(Job).options(*_JOB_LOADS)
     if not mine and not user.has(RoleName.ADMIN) and not user.has(RoleName.MODERATOR):
         raise HTTPException(status_code=403, detail="Only moderators and admins can list all jobs")
 
@@ -163,7 +224,7 @@ def get_job(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    job = db.query(Job).options(joinedload(Job.input_values)).filter(Job.id == job_id).one_or_none()
+    job = db.query(Job).options(*_JOB_LOADS).filter(Job.id == job_id).one_or_none()
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     if not user.has(RoleName.ADMIN) and job.user_id != user.id:
