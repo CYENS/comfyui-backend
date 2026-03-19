@@ -79,7 +79,7 @@ def refresh(payload: AuthRefreshRequest, db: Session = Depends(get_db)):
     record = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).one_or_none()
     if record is None or record.revoked_at is not None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    if record.expires_at < datetime.now(UTC):
+    if record.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
     user = db.query(User).filter(User.id == record.user_id).one_or_none()
