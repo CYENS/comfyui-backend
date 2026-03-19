@@ -35,13 +35,13 @@ def _issue_token_pair(db: Session, user: User) -> AuthTokenOut:
     access_token = issue_access_token(user_id=user.id, roles=roles)
 
     refresh_value = issue_refresh_token_value()
-    refresh = RefreshToken(
+    refresh_token = RefreshToken(
         id=str(uuid.uuid4()),
         user_id=user.id,
         token_hash=hash_token(refresh_value),
         expires_at=datetime.now(UTC) + timedelta(days=settings.auth_refresh_token_ttl_days),
     )
-    db.add(refresh)
+    db.add(refresh_token)
     db.commit()
 
     return AuthTokenOut(
