@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.db import Base, get_db
@@ -67,7 +67,7 @@ def _auth_headers(user_id: str, roles: list[RoleName]) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _create_workflow(db, owner_id: str) -> Workflow:
+def _create_workflow(db: Session, owner_id: str) -> Workflow:
     workflow = Workflow(
         id=str(uuid.uuid4()),
         key="private-workflow",
@@ -108,7 +108,7 @@ def _create_workflow(db, owner_id: str) -> Workflow:
     return workflow
 
 
-def _create_job(db, workflow_id: str, workflow_version_id: str, user_id: str) -> Job:
+def _create_job(db: Session, workflow_id: str, workflow_version_id: str, user_id: str) -> Job:
     job = Job(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -131,7 +131,7 @@ def _create_job(db, workflow_id: str, workflow_version_id: str, user_id: str) ->
     return job
 
 
-def _create_asset(db, job: Job, tmp_path: Path) -> Asset:
+def _create_asset(db: Session, job: Job, tmp_path: Path) -> Asset:
     file_path = tmp_path / f"{job.id}.png"
     file_path.write_bytes(b"asset-bytes")
     asset = Asset(

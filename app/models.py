@@ -1,6 +1,6 @@
 import enum
 from datetime import UTC, datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, TypeAlias
 
 from sqlalchemy import (
     BigInteger,
@@ -17,6 +17,16 @@ from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
+
+if TYPE_CHECKING:
+    from dataclasses import dataclass as dataclass_sql
+else:
+
+    def dataclass_sql(cls):
+        return cls
+
+
+JSONValue: TypeAlias = str | int | float | bool | list | dict | None
 
 
 def utcnow() -> datetime:
@@ -72,6 +82,7 @@ class UserRole(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+@dataclass_sql
 class User(Base):
     __tablename__ = "users"
 
@@ -164,7 +175,7 @@ class WorkflowVersion(Base):
     )
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     prompt_json: Mapped[dict] = mapped_column(JSON, nullable=False)
-    inputs_schema_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    inputs_schema_json: Mapped[list] = mapped_column(JSON, nullable=True)
     prompt_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("users.id"), nullable=False
@@ -230,7 +241,7 @@ class JobInputValue(Base):
         String(36), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False
     )
     input_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    value_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    value_json: Mapped[JSONValue] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     job: Mapped["Job"] = relationship("Job", back_populates="input_values")
