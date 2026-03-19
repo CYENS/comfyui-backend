@@ -130,20 +130,17 @@ def _persist_requirements(db: Session, version_id: str, raw: list[dict]) -> None
         )
 
 
-def seed_workflows(db: Session) -> None:
+def _build_templates() -> list[dict[str, Any]]:
     seed_dir = Path(__file__).resolve().parents[1] / "seed" / "prompts"
     repo_root = Path(__file__).resolve().parents[2]
 
-    # Legacy audio prompt (kept for backwards compat)
     audio_prompt = _load_json(repo_root / "prompts" / "audio_stable_audio_example.json")
-
-    # New seeded workflows loaded from seed/prompts/
     flux2_api = _load_json(seed_dir / "image_flux2_klein_text_to_image-api.json")
     flux2_ui = _load_json(seed_dir / "image_flux2_klein_text_to_image-ui.json")
     trellis_api = _load_json(seed_dir / "simple-image-to-3d-trellis-api.json")
     trellis_ui = _load_json(seed_dir / "simple-image-to-3d-trellis-ui.json")
 
-    templates: list[dict[str, Any]] = [
+    return [
         {
             "key": "flux2_klein_text_to_image",
             "name": "Flux 2 Klein — Text to Image",
@@ -213,7 +210,10 @@ def seed_workflows(db: Session) -> None:
         {
             "key": "text_to_audio",
             "name": "Text to Audio",
-            "description": "Seeded text to audio workflow",
+            "description": (
+                "Generate audio clips from a text prompt using Stable Audio. "
+                "Control the length in seconds and tweak the seed for variation."
+            ),
             "prompt_json": audio_prompt,
             "ui_json": None,
             "inputs_schema_json": [
@@ -253,6 +253,10 @@ def seed_workflows(db: Session) -> None:
         },
     ]
 
+
+def seed_workflows(db: Session) -> None:
+    templates = _build_templates()
+
     for template in templates:
         wf = db.query(Workflow).filter(Workflow.key == template["key"]).one_or_none()
         if wf is None:
@@ -265,6 +269,10 @@ def seed_workflows(db: Session) -> None:
             )
             db.add(wf)
             db.flush()
+        else:
+            wf.name = template["name"]
+            wf.description = template["description"]
+            db.add(wf)
 
             version = WorkflowVersion(
                 id=str(uuid.uuid4()),
@@ -291,3 +299,7 @@ def seed_workflows(db: Session) -> None:
             _persist_requirements(db, version.id, raw_reqs)
 
     db.commit()
+
+
+def _DRY_RUN_TEMPLATES() -> list[dict[str, Any]]:
+    return _build_templates()

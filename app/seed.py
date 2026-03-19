@@ -32,6 +32,17 @@ def load_env_file(env_path: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed roles, workflows, and admin user")
     parser.add_argument("--env-file", default=str(DEFAULT_ENV_PATH), help="Path to .env file")
+    parser.add_argument(
+        "--fresh", action="store_true", help="Drop and recreate the database before seeding"
+    )
+    parser.add_argument(
+        "--yes", action="store_true", help="Skip confirmation prompt (use with --fresh)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be seeded without writing to the database",
+    )
     args = parser.parse_args()
 
     load_env_file(Path(args.env_file))
@@ -41,6 +52,44 @@ def main() -> None:
 
     if not username or not password:
         raise SystemExit("Missing USER_NAME or USER_PASSWORD. Set them in env or in the env file.")
+
+    if args.dry_run:
+        print("[dry-run] Would seed:")
+        print(f"  admin user: {username}")
+        optional_users = [
+            ("WORKFLOW_CREATOR_USER_NAME", "WORKFLOW_CREATOR_USER_PASSWORD", "workflow_creator"),
+            ("JOB_CREATOR_USER_NAME", "JOB_CREATOR_USER_PASSWORD", "job_creator"),
+            ("VIEWER_USER_NAME", "VIEWER_USER_PASSWORD", "viewer"),
+            ("MODERATOR_USER_NAME", "MODERATOR_USER_PASSWORD", "moderator"),
+        ]
+        for env_user, env_pass, role in optional_users:
+            u = os.environ.get(env_user)
+            p = os.environ.get(env_pass)
+            if u and p:
+                print(f"  user: {u} roles=[{role}]")
+        if args.fresh:
+            print("[dry-run] Would drop and recreate all tables")
+        from .seeding import _DRY_RUN_TEMPLATES
+
+        for t in _DRY_RUN_TEMPLATES():
+            print(f"  workflow: {t['key']!r} — {t['name']!r}")
+            print(f"    description: {t['description']!r}")
+            print(f"    inputs: {[i['id'] for i in t['inputs_schema_json']]}")
+        print("[dry-run] No changes written.")
+        return
+
+    if args.fresh:
+        if not args.yes:
+            answer = (
+                input("This will drop all tables and delete all data. Are you sure? [y/N] ")
+                .strip()
+                .lower()
+            )
+            if answer != "y":
+                raise SystemExit("Aborted.")
+        print("Dropping all tables…")
+        Base.metadata.drop_all(bind=engine)
+        print("Recreating schema…")
 
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
