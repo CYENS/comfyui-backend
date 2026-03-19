@@ -45,6 +45,39 @@ uv run uvicorn app.main:app --reload --port 8000
 uv run python -m app.worker
 ```
 
+## Authentication flow
+
+```mermaid
+sequenceDiagram
+    participant FE as Frontend
+    participant API as Backend API
+
+    Note over FE,API: Startup — detect dev mode
+    FE->>API: GET /api/auth/dev
+    API-->>FE: { auth_dev_mode, default_user_id, default_roles }
+
+    Note over FE,API: Login
+    FE->>API: POST /api/auth/login { username, password }
+    API-->>FE: { access_token, refresh_token, expires_in_seconds, user }
+    Note over FE: Store access_token in memory<br/>Store refresh_token in httpOnly cookie
+
+    Note over FE,API: Authenticated request
+    FE->>API: GET /api/... ── Authorization: Bearer <access_token>
+    API-->>FE: 200 OK + data
+
+    Note over FE,API: Silent token refresh (access token expired)
+    FE->>API: POST /api/auth/refresh { refresh_token }
+    API-->>FE: new { access_token, refresh_token }
+    Note over FE: Replace both stored tokens
+    FE->>API: retry original request with new access_token
+    API-->>FE: 200 OK + data
+
+    Note over FE,API: Logout
+    FE->>API: POST /api/auth/logout { refresh_token }
+    API-->>FE: { status: "ok" }
+    Note over FE: Clear both tokens from storage
+```
+
 ## Notes
 - JWT auth is enabled (`/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/me`).
 - Access token lifetime is controlled by `AUTH_ACCESS_TOKEN_TTL_MINUTES` in `backend/.env` (default `60`).
@@ -57,6 +90,5 @@ uv run python -m app.worker
 - Storage root defaults to /data/app
 - The Text→Audio workflow template is loaded from `prompts/audio_stable_audio_example.json`.
 - Docs:
-  - `backend/docs/auth-jwt.md`
-  - `backend/docs/auth-integration-pipeline.md`
-  - `backend/docs/assets-lifecycle.md`
+  - `docs/AUTHENTICATION.md` — full auth system reference (backend)
+  - `docs/auth-frontend-integration.md` — frontend integration guide with TypeScript reference implementation
